@@ -2,31 +2,30 @@ module.exports = async function handler(req, res) {
   try {
 
     /* ==========================================
-       LEADER CYCLE - RANKINGS V3 FAST
+       LEADER CYCLE - RANKINGS V3 SAFE
 
        MARKET SCAN
           ↓
-       후보 10개
+       후보 종목
           ↓
        STOCK DETAIL 정밀 분석
           ↓
        ENTRY / LEADER / EARLY / EXHAUSTION
 
-       속도 안정화 버전
-       기본 10종목
-       5개씩 병렬 처리
+       핵심:
+       KRX 동시 호출 폭주 방지를 위해
+       2종목씩 분석 + 배치 사이 300ms 대기
     ========================================== */
 
 
     /* ==========================================
-       BASE URL
+       기본 설정
     ========================================== */
 
     const protocol =
       req.headers["x-forwarded-proto"] || "https";
 
-    const host =
-      req.headers.host;
+    const host = req.headers.host;
 
     if (!host) {
       return res.status(500).json({
@@ -56,22 +55,26 @@ module.exports = async function handler(req, res) {
       value,
       min,
       max
-    ) => {
-      return Math.max(
+    ) =>
+      Math.max(
         min,
         Math.min(max, value)
       );
-    };
+
+
+    const sleep = ms =>
+      new Promise(resolve =>
+        setTimeout(resolve, ms)
+      );
 
 
     /* ==========================================
        요청 옵션
 
-       기본 = 10개
-       최소 = 10개
-       최대 = 20개
+       기본 10개
 
-       일단 안정성을 위해 10개 권장
+       안정화 확인 후
+       15 → 20으로 늘릴 수 있음
     ========================================== */
 
     const requestedLimit =
@@ -86,10 +89,16 @@ module.exports = async function handler(req, res) {
         Number.isFinite(requestedLimit)
           ? requestedLimit
           : 10,
-        10,
-        20
+        5,
+        30
       );
 
+
+    /* ==========================================
+       날짜 옵션
+
+       date=20260923 형식 지원
+    ========================================== */
 
     const requestedDate =
       String(
@@ -97,24 +106,18 @@ module.exports = async function handler(req, res) {
       ).trim();
 
 
+    const dateQuery =
+      /^\d{8}$/.test(requestedDate)
+        ? `&date=${requestedDate}`
+        : "";
+
+
     /* ==========================================
        1. MARKET SCAN
     ========================================== */
 
-    let scanUrl =
-      `${baseUrl}/api/market-scan?limit=${limit}`;
-
-
-    if (
-      /^\d{8}$/.test(
-        requestedDate
-      )
-    ) {
-      scanUrl +=
-        `&date=${encodeURIComponent(
-          requestedDate
-        )}`;
-    }
+    const scanUrl =
+      `${baseUrl}/api/market-scan?limit=${limit}${dateQuery}`;
 
 
     const scanResponse =
@@ -129,11 +132,10 @@ module.exports = async function handler(req, res) {
       scan =
         await scanResponse.json();
 
-    } catch (error) {
+    } catch {
 
       return res.status(500).json({
         ok: false,
-
         error:
           "market-scan 응답을 읽지 못했습니다."
       });
@@ -144,30 +146,17 @@ module.exports = async function handler(req, res) {
     if (
       !scanResponse.ok ||
       !scan.ok ||
-      !Array.isArray(
-        scan.candidates
-      )
+      !Array.isArray(scan.candidates)
     ) {
 
       return res.status(500).json({
         ok: false,
-
         error:
           "market-scan 호출 실패",
-
-        detail:
-          scan
+        detail: scan
       });
 
     }
-
-
-    const analysisDate =
-      String(
-        scan.date ||
-        requestedDate ||
-        ""
-      );
 
 
     const candidates =
@@ -177,56 +166,41 @@ module.exports = async function handler(req, res) {
       );
 
 
-    if (
-      candidates.length === 0
-    ) {
-
-      return res.status(404).json({
-        ok: false,
-
-        error:
-          "정밀분석할 후보 종목이 없습니다."
-      });
-
-    }
-
-
     /* ==========================================
-       2. STOCK DETAIL
+       2. STOCK DETAIL 분석 함수
 
-       후보 종목 하나를
-       정밀 분석
+       한 종목이 실패해도
+       전체 rankings는 계속 진행
     ========================================== */
 
-    async function analyze(
-      candidate
-    ) {
+    async function analyze(candidate) {
 
       try {
 
         let url =
-          `${baseUrl}/api/stock-detail` +
-          `?code=${encodeURIComponent(
+          `${baseUrl}/api/stock-detail?code=${encodeURIComponent(
             candidate.code
           )}`;
 
 
         /*
-          stock-detail에서 date를
-          지원하는 경우를 대비해서 전달
+          market-scan에서 사용한 날짜가 있으면
+          같은 날짜를 stock-detail에도 전달 가능
 
-          지원하지 않아도 문제 없음
+          stock-detail이 date를 지원하지 않아도
+          현재 구조에서는 무해함.
         */
 
         if (
+          scan.date &&
           /^\d{8}$/.test(
-            analysisDate
+            String(scan.date)
           )
         ) {
 
           url +=
             `&date=${encodeURIComponent(
-              analysisDate
+              scan.date
             )}`;
 
         }
@@ -236,7 +210,7 @@ module.exports = async function handler(req, res) {
           await fetch(url);
 
 
-        let detail;
+        let detail = null;
 
 
         try {
@@ -244,7 +218,7 @@ module.exports = async function handler(req, res) {
           detail =
             await response.json();
 
-        } catch (error) {
+        } catch {
 
           return {
             ok: false,
@@ -256,20 +230,16 @@ module.exports = async function handler(req, res) {
               candidate.name,
 
             market:
-              candidate.market ||
-              null,
+              candidate.market || null,
 
             error:
-              `stock-detail JSON 오류 / HTTP ${response.status}`
+              `stock-detail JSON 파싱 실패 (HTTP ${response.status})`
           };
 
         }
 
 
-        if (
-          !response.ok ||
-          !detail.ok
-        ) {
+        if (!response.ok) {
 
           return {
             ok: false,
@@ -281,22 +251,49 @@ module.exports = async function handler(req, res) {
               candidate.name,
 
             market:
-              candidate.market ||
-              null,
+              candidate.market || null,
 
             error:
               detail?.error ||
-              `stock-detail HTTP ${response.status}`
+              `stock-detail HTTP ${response.status}`,
+
+            detail:
+              detail?.detail || null
+          };
+
+        }
+
+
+        if (!detail?.ok) {
+
+          return {
+            ok: false,
+
+            code:
+              candidate.code,
+
+            name:
+              candidate.name,
+
+            market:
+              candidate.market || null,
+
+            error:
+              detail?.error ||
+              "stock-detail 분석 실패",
+
+            detail:
+              detail?.detail || null
           };
 
         }
 
 
         /* ======================================
-           필요한 결과만 저장
+           rankings에서 필요한 데이터만 사용
 
-           chart 100일 데이터는 rankings에
-           다시 넣지 않음
+           100일 chart 전체를 rankings에
+           다시 넣지 않음.
         ====================================== */
 
         return {
@@ -304,31 +301,33 @@ module.exports = async function handler(req, res) {
           ok: true,
 
 
-          /* ----------------------------------
-             기본 정보
-          ---------------------------------- */
-
           code:
             detail.code ||
             candidate.code,
 
+
           name:
             detail.name ||
             candidate.name,
+
 
           market:
             detail.market ||
             candidate.market ||
             null,
 
+
           date:
             detail.date ||
-            analysisDate,
+            scan.date ||
+            null,
+
 
           price:
             num(
               detail.price
             ),
+
 
           changeRate:
             num(
@@ -336,15 +335,18 @@ module.exports = async function handler(req, res) {
               detail.changeRate
             ),
 
+
           discoveryScore:
             num(
               candidate.discoveryScore
             ),
 
+
           tradingValue:
             num(
               candidate.tradingValue
             ),
+
 
           marketCap:
             num(
@@ -352,58 +354,51 @@ module.exports = async function handler(req, res) {
             ),
 
 
-          /* ----------------------------------
-             상태
-          ---------------------------------- */
-
           stage:
             detail.stage ||
             "DISCOVERY",
+
 
           entryStatus:
             detail.entryStatus ||
             "WAIT",
 
+
           blocked:
             detail.blocked === true,
 
 
-          /* ----------------------------------
-             점수
-          ---------------------------------- */
+          /* ====================================
+             SCORES
+          ==================================== */
 
           scores: {
 
             leader:
               num(
-                detail.scores
-                  ?.leader
+                detail.scores?.leader
               ),
 
             early:
               num(
-                detail.scores
-                  ?.early
+                detail.scores?.early
               ),
 
             entry:
               num(
-                detail.scores
-                  ?.entry
+                detail.scores?.entry
               ),
 
             exhaustion:
               num(
-                detail.scores
-                  ?.exhaustion
+                detail.scores?.exhaustion
               )
-
           },
 
 
-          /* ----------------------------------
-             핵심 신호
-          ---------------------------------- */
+          /* ====================================
+             SIGNALS
+          ==================================== */
 
           signals: {
 
@@ -411,13 +406,16 @@ module.exports = async function handler(req, res) {
               detail.signals
                 ?.alignment === true,
 
+
             ma20Rising:
               detail.signals
                 ?.ma20Rising === true,
 
+
             ma60Rising:
               detail.signals
                 ?.ma60Rising === true,
+
 
             ma20To60Gap:
               num(
@@ -425,11 +423,13 @@ module.exports = async function handler(req, res) {
                   ?.ma20To60Gap
               ),
 
+
             distance20:
               num(
                 detail.signals
                   ?.distance20
               ),
+
 
             distance60:
               num(
@@ -437,11 +437,13 @@ module.exports = async function handler(req, res) {
                   ?.distance60
               ),
 
+
             return5:
               num(
                 detail.signals
                   ?.return5
               ),
+
 
             return10:
               num(
@@ -449,11 +451,13 @@ module.exports = async function handler(req, res) {
                   ?.return10
               ),
 
+
             return20:
               num(
                 detail.signals
                   ?.return20
               ),
+
 
             return60:
               num(
@@ -461,11 +465,13 @@ module.exports = async function handler(req, res) {
                   ?.return60
               ),
 
+
             volumeRatio:
               num(
                 detail.signals
                   ?.volumeRatio
               ),
+
 
             tradingValueRatio:
               num(
@@ -473,10 +479,10 @@ module.exports = async function handler(req, res) {
                   ?.tradingValueRatio
               ),
 
+
             breakout20:
               detail.signals
                 ?.breakout20 === true
-
           },
 
 
@@ -536,7 +542,6 @@ module.exports = async function handler(req, res) {
                     .reasons
                     .slice(0, 4)
                 : []
-
           },
 
 
@@ -583,7 +588,6 @@ module.exports = async function handler(req, res) {
                     .warnings
                     .slice(0, 3)
                 : []
-
           }
 
         };
@@ -602,15 +606,13 @@ module.exports = async function handler(req, res) {
             candidate.name,
 
           market:
-            candidate.market ||
-            null,
+            candidate.market || null,
 
           error:
             String(
               error?.message ||
               error
             )
-
         };
 
       }
@@ -619,20 +621,26 @@ module.exports = async function handler(req, res) {
 
 
     /* ==========================================
-       3. BATCH 분석
+       3. SAFE BATCH 분석
 
-       ★ 중요 ★
+       ★ 핵심 수정 ★
 
-       10개 한꺼번에 돌리지 않고
-       5개씩 병렬 실행
+       기존:
+       5종목 동시 분석
 
-       서버 부하 감소
+       변경:
+       2종목 동시 분석
+
+       각 batch 사이
+       300ms 대기
+
+       KRX 요청 폭주 방지
     ========================================== */
 
     const results = [];
 
 
-    const batchSize = 5;
+    const batchSize = 2;
 
 
     for (
@@ -650,9 +658,7 @@ module.exports = async function handler(req, res) {
 
       const batchResults =
         await Promise.all(
-          batch.map(
-            analyze
-          )
+          batch.map(analyze)
         );
 
 
@@ -660,71 +666,111 @@ module.exports = async function handler(req, res) {
         ...batchResults
       );
 
+
+      /*
+        마지막 batch가 아니면
+        300ms 쉬고 다음 batch 진행
+      */
+
+      if (
+        i + batchSize <
+        candidates.length
+      ) {
+
+        await sleep(300);
+
+      }
+
     }
 
 
     /* ==========================================
-       4. 성공 / 실패
+       4. 성공 / 실패 분리
     ========================================== */
 
     const analyzed =
       results.filter(
-        item =>
-          item.ok
+        item => item.ok
       );
 
 
     const failed =
       results.filter(
-        item =>
-          !item.ok
+        item => !item.ok
       );
 
 
     /* ==========================================
-       5. ENTRY STATUS
+       5. 신규매수 가능 종목
 
-       최종 상태 재확인
+       아래는 제외
+
+       blocked
+       exhaustion >= 75
+       BROKEN
+       EXHAUSTING
     ========================================== */
 
-    function entryLabel(
-      stock
-    ) {
+    const buyable =
+      analyzed.filter(stock => {
+
+        if (stock.blocked) {
+          return false;
+        }
+
+
+        if (
+          stock.scores.exhaustion >= 75
+        ) {
+          return false;
+        }
+
+
+        if (
+          stock.stage === "BROKEN" ||
+          stock.stage === "EXHAUSTING"
+        ) {
+          return false;
+        }
+
+
+        return true;
+
+      });
+
+
+    /* ==========================================
+       ENTRY STATUS 재계산
+    ========================================== */
+
+    function entryLabel(stock) {
 
       if (
         stock.blocked ||
         stock.scores.exhaustion >= 75
       ) {
-
         return "BLOCKED";
-
       }
 
 
       if (
         stock.scores.entry >= 80
       ) {
-
         return "ATTRACTIVE";
-
       }
 
 
       if (
         stock.scores.entry >= 65
       ) {
-
         return "WATCH";
-
       }
 
 
       if (
         stock.scores.entry >= 50
       ) {
-
         return "NEUTRAL";
-
       }
 
 
@@ -733,282 +779,149 @@ module.exports = async function handler(req, res) {
     }
 
 
-    analyzed.forEach(
-      stock => {
+    analyzed.forEach(stock => {
 
-        stock.entryStatus =
-          entryLabel(
-            stock
-          );
+      stock.entryStatus =
+        entryLabel(stock);
 
-      }
-    );
+    });
 
 
     /* ==========================================
-       6. BUYABLE
+       6. ENTRY RANKING
 
-       신규매수 후보에서 제외
-
-       BLOCKED
-       EXHAUSTION >= 75
-       BROKEN
-       EXHAUSTING
-    ========================================== */
-
-    const buyable =
-      analyzed.filter(
-        stock => {
-
-          if (
-            stock.blocked
-          ) {
-            return false;
-          }
-
-
-          if (
-            stock.scores
-              .exhaustion >= 75
-          ) {
-            return false;
-          }
-
-
-          if (
-            stock.stage ===
-              "BROKEN" ||
-
-            stock.stage ===
-              "EXHAUSTING"
-          ) {
-
-            return false;
-
-          }
-
-
-          return true;
-
-        }
-      );
-
-
-    /* ==========================================
-       7. ENTRY RANKING
-
-       지금 산다면?
+       지금 신규 진입하기 좋은 종목
     ========================================== */
 
     const entryRanking =
       [...buyable]
 
-        .sort(
-          (a, b) => {
+        .sort((a, b) => {
 
-            /*
-              1순위
-              ENTRY SCORE
-            */
-
-            if (
-              b.scores.entry !==
-              a.scores.entry
-            ) {
-
-              return (
-                b.scores.entry -
-                a.scores.entry
-              );
-
-            }
-
-
-            /*
-              2순위
-              공세소멸 낮은 종목
-            */
-
-            if (
-              a.scores.exhaustion !==
-              b.scores.exhaustion
-            ) {
-
-              return (
-                a.scores.exhaustion -
-                b.scores.exhaustion
-              );
-
-            }
-
-
-            /*
-              3순위
-              EARLY
-            */
-
-            if (
-              b.scores.early !==
-              a.scores.early
-            ) {
-
-              return (
-                b.scores.early -
-                a.scores.early
-              );
-
-            }
-
-
-            /*
-              4순위
-              DISCOVERY
-            */
+          if (
+            b.scores.entry !==
+            a.scores.entry
+          ) {
 
             return (
-              b.discoveryScore -
-              a.discoveryScore
+              b.scores.entry -
+              a.scores.entry
             );
 
           }
-        )
 
-        .slice(
-          0,
-          10
-        );
+
+          if (
+            a.scores.exhaustion !==
+            b.scores.exhaustion
+          ) {
+
+            return (
+              a.scores.exhaustion -
+              b.scores.exhaustion
+            );
+
+          }
+
+
+          return (
+            b.scores.leader -
+            a.scores.leader
+          );
+
+        })
+
+        .slice(0, 15);
 
 
     /* ==========================================
-       8. LEADER RANKING
-
-       현재 실제 주도주
+       7. CURRENT LEADER RANKING
     ========================================== */
 
     const leaderRanking =
       [...analyzed]
 
-        .filter(
-          stock =>
+        .filter(stock =>
 
-            !stock.blocked &&
+          !stock.blocked &&
 
-            stock.scores
-              .exhaustion < 75
+          stock.scores
+            .exhaustion < 75
+
         )
 
-        .sort(
-          (a, b) => {
+        .sort((a, b) => {
 
-            if (
-              b.scores.leader !==
-              a.scores.leader
-            ) {
-
-              return (
-                b.scores.leader -
-                a.scores.leader
-              );
-
-            }
-
-
-            if (
-              a.scores.exhaustion !==
-              b.scores.exhaustion
-            ) {
-
-              return (
-                a.scores.exhaustion -
-                b.scores.exhaustion
-              );
-
-            }
-
+          if (
+            b.scores.leader !==
+            a.scores.leader
+          ) {
 
             return (
-              b.discoveryScore -
-              a.discoveryScore
+              b.scores.leader -
+              a.scores.leader
             );
 
           }
-        )
 
-        .slice(
-          0,
-          10
-        );
+
+          return (
+            a.scores.exhaustion -
+            b.scores.exhaustion
+          );
+
+        })
+
+        .slice(0, 15);
 
 
     /* ==========================================
-       9. EARLY RANKING
-
-       차기 주도주 후보
+       8. NEXT LEADER RANKING
     ========================================== */
 
     const earlyRanking =
       [...buyable]
 
-        .sort(
-          (a, b) => {
+        .sort((a, b) => {
 
-            if (
-              b.scores.early !==
-              a.scores.early
-            ) {
-
-              return (
-                b.scores.early -
-                a.scores.early
-              );
-
-            }
-
-
-            if (
-              b.scores.entry !==
-              a.scores.entry
-            ) {
-
-              return (
-                b.scores.entry -
-                a.scores.entry
-              );
-
-            }
-
-
-            if (
-              a.scores.exhaustion !==
-              b.scores.exhaustion
-            ) {
-
-              return (
-                a.scores.exhaustion -
-                b.scores.exhaustion
-              );
-
-            }
-
+          if (
+            b.scores.early !==
+            a.scores.early
+          ) {
 
             return (
-              b.discoveryScore -
-              a.discoveryScore
+              b.scores.early -
+              a.scores.early
             );
 
           }
-        )
 
-        .slice(
-          0,
-          10
-        );
+
+          if (
+            b.scores.entry !==
+            a.scores.entry
+          ) {
+
+            return (
+              b.scores.entry -
+              a.scores.entry
+            );
+
+          }
+
+
+          return (
+            b.discoveryScore -
+            a.discoveryScore
+          );
+
+        })
+
+        .slice(0, 15);
 
 
     /* ==========================================
-       10. EXHAUSTION RANKING
-
-       공세 소멸 위험
+       9. EXHAUSTION RANKING
     ========================================== */
 
     const exhaustionRanking =
@@ -1021,40 +934,18 @@ module.exports = async function handler(req, res) {
         )
 
         .sort(
-          (a, b) => {
-
-            if (
-              b.scores.exhaustion !==
-              a.scores.exhaustion
-            ) {
-
-              return (
-                b.scores.exhaustion -
-                a.scores.exhaustion
-              );
-
-            }
-
-
-            return (
-              b.scores.leader -
-              a.scores.leader
-            );
-
-          }
+          (a, b) =>
+            b.scores.exhaustion -
+            a.scores.exhaustion
         )
 
-        .slice(
-          0,
-          10
-        );
+        .slice(0, 15);
 
 
     /* ==========================================
-       11. TOP PICKS
+       10. TOP PICKS
 
-       사이트 메인 화면에서
-       1위 종목 바로 표시 가능
+       사이트 메인에서 바로 사용 가능
     ========================================== */
 
     const topPicks = {
@@ -1079,29 +970,43 @@ module.exports = async function handler(req, res) {
 
 
     /* ==========================================
-       12. MARKET COUNT
+       시장별 분석 성공 개수
     ========================================== */
 
-    const kospiCount =
-      analyzed.filter(
-        stock =>
-          stock.market ===
-          "KOSPI"
-      ).length;
+    const analyzedMarket = {
+      kospi: 0,
+      kosdaq: 0,
+      total:
+        analyzed.length
+    };
 
 
-    const kosdaqCount =
-      analyzed.filter(
-        stock =>
-          stock.market ===
-          "KOSDAQ"
-      ).length;
+    analyzed.forEach(stock => {
+
+      if (
+        stock.market === "KOSPI"
+      ) {
+
+        analyzedMarket.kospi++;
+
+      }
+
+
+      if (
+        stock.market === "KOSDAQ"
+      ) {
+
+        analyzedMarket.kosdaq++;
+
+      }
+
+    });
 
 
     /* ==========================================
        CACHE
 
-       30분
+       rankings는 30분 캐시
     ========================================== */
 
     res.setHeader(
@@ -1120,81 +1025,66 @@ module.exports = async function handler(req, res) {
 
 
       version:
-        "LEADER_CYCLE_RANKINGS_V3_FAST",
+        "LEADER_CYCLE_RANKINGS_V3_SAFE",
 
 
       requestedDate:
-        requestedDate ||
-        null,
+        requestedDate || null,
 
 
       date:
-        analysisDate,
+        scan.date || null,
 
-
-      /* ========================================
-         통계
-      ======================================== */
 
       stats: {
 
         marketStocks:
-          num(
-            scan.market
-              ?.totalStocks
-          ),
+          scan.market
+            ?.totalStocks || 0,
+
 
         investableStocks:
-          num(
-            scan.market
-              ?.investableStocks
-          ),
+          scan.market
+            ?.investableStocks || 0,
+
 
         discoveryCandidates:
           candidates.length,
 
+
         analyzed:
           analyzed.length,
+
 
         failed:
           failed.length,
 
+
         buyable:
           buyable.length,
 
-        analyzedMarket: {
 
-          kospi:
-            kospiCount,
-
-          kosdaq:
-            kosdaqCount,
-
-          total:
-            analyzed.length
-
-        }
-
+        analyzedMarket
       },
 
-
-      /* ========================================
-         점수 설명
-      ======================================== */
 
       scoreGuide: {
 
         discovery:
           "정밀분석 대상을 찾기 위한 1차 시장 탐색 점수",
 
+
         leader:
           "현재 실제 주도주로서의 추세·모멘텀·거래활동·지속성을 평가",
+
 
         early:
           "아직 과도하게 오르기 전 차기 주도주 전환 가능성을 평가",
 
+
         entry:
           "지금 신규 매수할 때의 추세·위치·모멘텀·거래활동을 평가",
+
 
         exhaustion:
           "공세 소멸 및 추세 종료 위험. 높을수록 신규매수에 불리"
@@ -1202,48 +1092,40 @@ module.exports = async function handler(req, res) {
       },
 
 
-      /* ========================================
-         각 부문 1위
-      ======================================== */
-
       topPicks,
 
 
-      /* ========================================
-         전체 랭킹
-      ======================================== */
-
       entryRanking,
+
 
       leaderRanking,
 
+
       earlyRanking,
+
 
       exhaustionRanking,
 
 
-      /* ========================================
-         실패 종목
-      ======================================== */
-
       failed:
-        failed.map(
-          item => ({
+        failed.map(item => ({
 
-            code:
-              item.code,
+          code:
+            item.code,
 
-            name:
-              item.name,
+          name:
+            item.name,
 
-            market:
-              item.market,
+          market:
+            item.market || null,
 
-            error:
-              item.error
+          error:
+            item.error,
 
-          })
-        )
+          detail:
+            item.detail || null
+
+        }))
 
     });
 
@@ -1251,7 +1133,7 @@ module.exports = async function handler(req, res) {
   } catch (error) {
 
     console.error(
-      "RANKINGS FAST ERROR",
+      "RANKINGS ERROR",
       error
     );
 
@@ -1259,9 +1141,6 @@ module.exports = async function handler(req, res) {
     return res.status(500).json({
 
       ok: false,
-
-      version:
-        "LEADER_CYCLE_RANKINGS_V3_FAST",
 
       error:
         String(
