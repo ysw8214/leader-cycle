@@ -3,84 +3,76 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Leader Cycle</title>
+<title>Leader Cycle Scanner</title>
 
 <style>
 *{box-sizing:border-box}
 body{
-margin:0;
-background:#080b10;
-color:#f5f7fa;
+margin:0;background:#070a0f;color:#f4f7fa;
 font-family:-apple-system,BlinkMacSystemFont,"Noto Sans KR",sans-serif
 }
-main{max-width:900px;margin:auto;padding:24px 16px 60px}
-header{display:flex;justify-content:space-between;align-items:center}
-.logo{font-weight:900;font-size:20px}
-.logo b{color:#35e69a}
-.date{color:#7e8998;font-size:12px}
-h1{font-size:28px;margin:35px 0 8px}
-.desc{color:#8995a5;font-size:14px;line-height:1.6}
+main{max-width:950px;margin:auto;padding:20px 14px 70px}
+header{display:flex;justify-content:space-between;align-items:center;margin-bottom:27px}
+.logo{font-weight:900;font-size:20px}.logo b{color:#36e39a}
+.muted{color:#7c8998;font-size:11px}
+h1{font-size:26px;margin:0 0 7px}
+.desc{color:#84909f;font-size:12px;line-height:1.65}
 .card{
-background:#10151d;
-border:1px solid #242d39;
-border-radius:18px;
-padding:20px;
-margin-top:18px
+background:#10151d;border:1px solid #222b37;
+border-radius:17px;padding:17px;margin-top:15px
 }
-.title{
-color:#8491a1;
-font-size:12px;
-font-weight:800;
-letter-spacing:1px;
-margin-bottom:14px
+.title{color:#7d8998;font-size:10px;font-weight:900;letter-spacing:1.2px;margin-bottom:13px}
+.item{
+display:grid;grid-template-columns:27px 1fr 50px 82px;
+gap:7px;align-items:center;padding:14px 0;
+border-bottom:1px solid #1e2631;cursor:pointer
 }
-.row{
-display:grid;
-grid-template-columns:30px 1fr 45px 95px;
-gap:8px;
-align-items:center;
-padding:14px 0;
-border-bottom:1px solid #202733
-}
-.row:last-child{border:0}
-.rank{color:#657181}
+.item:last-child{border:0}
+.rank{color:#657181;font-size:11px}
 .name{font-weight:800}
+.sub{color:#6f7c8b;font-size:9px;margin-top:4px}
 .score{font-size:18px;font-weight:900}
-.tag{
-font-size:9px;
-font-weight:900;
-padding:7px 4px;
-border-radius:15px;
-text-align:center
+.tag{text-align:center;padding:6px 3px;border-radius:14px;font-size:8px;font-weight:900}
+.leader{background:#12372d;color:#35e69a}
+.emerge{background:#102d49;color:#64b4ff}
+.watch{background:#3b3016;color:#ffd166}
+.weak{background:#291a20;color:#e27787}
+.bar{height:3px;background:#232c37;border-radius:5px;margin-top:6px}
+.fill{height:100%;background:linear-gradient(90deg,#4d9fff,#35e69a);border-radius:5px}
+.tabs{display:flex;gap:7px;margin-top:20px;overflow:auto}
+.tab{
+border:1px solid #26313e;background:#111821;color:#8996a5;
+padding:9px 12px;border-radius:10px;font-size:10px;font-weight:800;
+white-space:nowrap;cursor:pointer
 }
-.green{background:#10372c;color:#35e69a}
-.blue{background:#102d49;color:#62b2ff}
-.yellow{background:#3b3016;color:#ffd166}
-.red{background:#421c23;color:#ff7184}
-.bar{height:4px;background:#222b36;margin-top:7px;border-radius:5px}
-.fill{height:100%;background:#35e69a;border-radius:5px}
-.radar{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.box{
-background:#151b24;
-border-radius:12px;
-padding:14px
+.tab.active{background:#1b2732;color:#fff;border-color:#3b4b5d}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+.box{background:#151b24;border-radius:11px;padding:13px}
+.box small{color:#7c8998;font-size:9px}
+.box strong{display:block;font-size:19px;margin-top:6px}
+.green{color:#35e69a}.yellow{color:#ffd166}.red{color:#ff7184}
+.alert{
+background:#13251f;border:1px solid #20513e;color:#70e9b7;
+padding:12px;border-radius:11px;font-size:10px;line-height:1.6;margin-top:12px
 }
-.box small{color:#7f8b9b}
-.box strong{display:block;font-size:22px;margin-top:7px}
-.notice{
-background:#282013;
-color:#e9c885;
-padding:14px;
-border-radius:12px;
-font-size:12px;
-line-height:1.6
+.warning{
+background:#292113;border:1px solid #4c3a20;color:#e8c983;
+padding:12px;border-radius:11px;font-size:10px;line-height:1.6;margin-top:12px
 }
-footer{
-text-align:center;
-color:#566170;
-font-size:10px;
-margin-top:30px
+.back{
+border:0;background:#171f29;color:#d8e0e8;
+padding:9px 12px;border-radius:9px;font-weight:700;margin-bottom:17px
 }
+.stock{
+display:flex;justify-content:space-between;align-items:center;
+padding:14px 1px;border-bottom:1px solid #202833;cursor:pointer
+}
+.stock:last-child{border:0}
+.stock strong{font-size:14px}
+.stock small{display:block;color:#718091;margin-top:4px;font-size:9px}
+.stockScore{font-size:19px;font-weight:900;color:#35e69a}
+#scanner,#sectorPage,#stockPage{display:none}
+footer{text-align:center;color:#515d6c;font-size:9px;margin-top:30px;line-height:1.7}
 </style>
 </head>
 
@@ -89,105 +81,666 @@ margin-top:30px
 
 <header>
 <div class="logo">LEADER <b>CYCLE</b></div>
-<div class="date" id="date"></div>
+<div class="muted" id="today"></div>
 </header>
+
+<div id="home">
 
 <h1>주도주 사이클 탐지 시스템</h1>
 <div class="desc">
-상대강도 · 이동평균 정배열 · 실적 Delta · 수급을 분석해<br>
-현재 및 차기 주도섹터를 추적합니다.
+전체 시장을 매일 스캔하여 조건을 통과한 섹터만 표시합니다.<br>
+현재 주도주와 다음 주도주 후보를 분리해 추적합니다.
+</div>
+
+<div class="tabs">
+<button class="tab active">DASHBOARD</button>
+<button class="tab" onclick="showScanner()">전체 시장 SCANNER</button>
 </div>
 
 <section class="card">
-<div class="title">CURRENT LEADERS</div>
+<div class="title">🔥 CURRENT LEADERS</div>
+<div id="leaders"></div>
+</section>
 
-<div class="row">
-<div class="rank">01</div>
-<div class="name">반도체<div class="bar"><div class="fill" style="width:94%"></div></div></div>
-<div class="score">94</div>
-<div class="tag yellow">MATURE</div>
+<section class="card">
+<div class="title">🚀 NEXT LEADER RADAR</div>
+<div id="radar"></div>
+</section>
+
+<section class="card">
+<div class="title">⚡ FASTEST RISING SECTORS</div>
+<div id="rising"></div>
+</section>
+
+<div class="warning">
+현재 시장 데이터는 시스템 테스트용 샘플입니다.
+KRX API 승인 후 전 섹터·전 종목 실제 데이터로 자동 교체됩니다.
 </div>
 
-<div class="row">
-<div class="rank">02</div>
-<div class="name">전력기기<div class="bar"><div class="fill" style="width:89%"></div></div></div>
-<div class="score">89</div>
-<div class="tag green">ACCEL.</div>
 </div>
 
-<div class="row">
-<div class="rank">03</div>
-<div class="name">방산<div class="bar"><div class="fill" style="width:84%"></div></div></div>
-<div class="score">84</div>
-<div class="tag blue">ATTACK</div>
+
+<div id="scanner">
+
+<button class="back" onclick="goHome()">← Dashboard</button>
+
+<h1>전체 시장 Scanner</h1>
+<div class="desc">
+메인 화면에 나타나지 않는 섹터까지 내부에서 모두 추적합니다.
 </div>
 
-<div class="row">
-<div class="rank">04</div>
-<div class="name">조선<div class="bar"><div class="fill" style="width:78%"></div></div></div>
-<div class="score">78</div>
-<div class="tag yellow">MATURE</div>
+<section class="card">
+<div class="title">ALL SECTORS · SCORE RANKING</div>
+<div id="allSectors"></div>
+</section>
+
+</div>
+
+
+<div id="sectorPage">
+
+<button class="back" onclick="backPrevious()">← 뒤로</button>
+
+<h1 id="sectorTitle"></h1>
+<div class="desc">섹터 분석 및 내부 주도종목</div>
+
+<section class="card">
+<div class="grid">
+
+<div class="box">
+<small>HAN CYCLE</small>
+<strong id="hanScore"></strong>
+</div>
+
+<div class="box">
+<small>EARLY LEADER</small>
+<strong id="earlyScore" class="green"></strong>
+</div>
+
+<div class="box">
+<small>RANK</small>
+<strong id="sectorRank"></strong>
+</div>
+
+<div class="box">
+<small>RANK VELOCITY</small>
+<strong id="velocity"></strong>
+</div>
+
 </div>
 </section>
 
 <section class="card">
-<div class="title">NEXT LEADER RADAR</div>
-
-<div class="radar">
-<div class="box">
-<small>로봇</small>
-<strong style="color:#35e69a">82</strong>
-</div>
-
-<div class="box">
-<small>우주·항공</small>
-<strong>71</strong>
-</div>
-
-<div class="box">
-<small>2차전지</small>
-<strong>63</strong>
-</div>
-
-<div class="box">
-<small>신규 후보</small>
-<strong>SCAN</strong>
-</div>
-</div>
+<div class="title">LEADING STOCKS</div>
+<div id="stocks"></div>
 </section>
+
+</div>
+
+
+<div id="stockPage">
+
+<button class="back" onclick="backSector()">← 섹터</button>
+
+<h1 id="stockTitle"></h1>
+<div class="desc" id="ticker"></div>
 
 <section class="card">
-<div class="title">SEMICONDUCTOR CYCLE</div>
 
-<div class="radar">
-<div class="box"><small>HAN CYCLE SCORE</small><strong>94</strong></div>
-<div class="box"><small>SECTOR RANK</small><strong style="color:#35e69a">#1</strong></div>
-<div class="box"><small>EARNINGS DELTA</small><strong style="color:#35e69a">▲</strong></div>
-<div class="box"><small>CULMINATION RISK</small><strong style="color:#ffd166">38%</strong></div>
+<div class="title">CYCLE ANALYSIS</div>
+
+<div class="grid">
+
+<div class="box">
+<small>CYCLE SCORE</small>
+<strong id="stockCycle" class="green"></strong>
 </div>
 
-<br>
+<div class="box">
+<small>4·13·26·52W</small>
+<strong class="green">정배열</strong>
+</div>
 
-<div class="notice">
-⚠️ 현재 표시된 숫자는 사이트 구축을 위한 샘플 데이터입니다.
-다음 단계에서 실제 시장 데이터를 연결해 자동 계산합니다.
+<div class="box">
+<small>EARNINGS DELTA</small>
+<strong class="green">▲</strong>
+</div>
+
+<div class="box">
+<small>CULMINATION RISK</small>
+<strong class="yellow">WATCH</strong>
+</div>
+
+</div>
+
+<div class="alert">
+상대강도 · 이동평균 정배열 · 실적 Delta · 거래대금 · 수급을 종합 추적합니다.
 </div>
 
 </section>
+
+</div>
 
 <footer>
-LEADER CYCLE ANALYTICS<br><br>
-주도주 사이클 분석 연구용 시스템 · 투자 권유가 아닙니다.
+LEADER CYCLE ANALYTICS<br>
+전체 시장 스캔 기반 주도주 탐지 연구 시스템 · 투자 권유가 아닙니다.
 </footer>
 
 </main>
 
+
 <script>
+
+/* ==========================================
+   전체 시장 데이터
+   향후 이 부분을 KRX 자동 데이터로 교체
+========================================== */
+
+const marketData=[
+
+{
+name:"반도체",
+han:94,
+early:58,
+velocity:-1,
+stage:"MATURE",
+stocks:[
+["SK하이닉스","000660",96],
+["삼성전자","005930",91],
+["한미반도체","042700",84],
+["HPSP","403870",79]
+]},
+
+{
+name:"전력기기",
+han:89,
+early:71,
+velocity:1,
+stage:"LEADER",
+stocks:[
+["HD현대일렉트릭","267260",94],
+["효성중공업","298040",91],
+["LS ELECTRIC","010120",87]
+]},
+
+{
+name:"방산",
+han:84,
+early:73,
+velocity:2,
+stage:"LEADER",
+stocks:[
+["한화에어로스페이스","012450",95],
+["LIG넥스원","079550",89],
+["현대로템","064350",86]
+]},
+
+{
+name:"조선",
+han:78,
+early:61,
+velocity:-2,
+stage:"MATURE",
+stocks:[
+["HD한국조선해양","009540",91],
+["한화오션","042660",87],
+["삼성중공업","010140",82]
+]},
+
+{
+name:"로봇",
+han:66,
+early:91,
+velocity:9,
+stage:"EMERGING",
+stocks:[
+["두산로보틱스","454910",82],
+["레인보우로보틱스","277810",80]
+]},
+
+{
+name:"우주·항공",
+han:61,
+early:83,
+velocity:6,
+stage:"WATCH",
+stocks:[
+["한화시스템","272210",79],
+["한국항공우주","047810",76]
+]},
+
+{
+name:"2차전지",
+han:55,
+early:78,
+velocity:8,
+stage:"WATCH",
+stocks:[
+["LG에너지솔루션","373220",74],
+["포스코퓨처엠","003670",69]
+]},
+
+{
+name:"바이오",
+han:53,
+early:69,
+velocity:4,
+stage:"WATCH",
+stocks:[
+["삼성바이오로직스","207940",72],
+["셀트리온","068270",67]
+]},
+
+{
+name:"화장품",
+han:49,
+early:57,
+velocity:-1,
+stage:"NEUTRAL",
+stocks:[
+["아모레퍼시픽","090430",61]
+]},
+
+{
+name:"자동차",
+han:46,
+early:52,
+velocity:1,
+stage:"NEUTRAL",
+stocks:[
+["현대차","005380",59],
+["기아","000270",57]
+]},
+
+{
+name:"게임",
+han:42,
+early:48,
+velocity:2,
+stage:"NEUTRAL",
+stocks:[
+["크래프톤","259960",55]
+]},
+
+{
+name:"철강",
+han:37,
+early:41,
+velocity:-4,
+stage:"WEAK",
+stocks:[
+["POSCO홀딩스","005490",48]
+]}
+
+];
+
+
+/* ==========================================
+   핵심 자동 선별 알고리즘
+========================================== */
+
+function calculate(){
+
+/* 현재 주도섹터
+   HAN 75점 이상만 메인 노출 */
+
+const leaders=marketData
+.filter(x=>x.han>=75)
+.sort((a,b)=>b.han-a.han);
+
+
+/* 차기 주도섹터
+   아직 HAN 75 미만이면서
+   Early Score 65 이상 */
+
+const radar=marketData
+.filter(x=>x.han<75 && x.early>=65)
+.sort((a,b)=>b.early-a.early);
+
+
+/* 가장 빠르게 순위가 상승하는 섹터 */
+
+const rising=[...marketData]
+.filter(x=>x.velocity>0)
+.sort((a,b)=>b.velocity-a.velocity)
+.slice(0,5);
+
+
+renderList("leaders",leaders,"han");
+renderList("radar",radar,"early");
+renderRising(rising);
+renderScanner();
+
+}
+
+
+/* ==========================================
+   화면 생성
+========================================== */
+
+function renderList(id,data,type){
+
+let html="";
+
+data.forEach((x,i)=>{
+
+const score=type==="han"?x.han:x.early;
+
+let tagClass="watch";
+
+if(x.stage==="LEADER")tagClass="leader";
+if(x.stage==="EMERGING")tagClass="emerge";
+
+html+=`
+
+<div class="item" onclick="openSector('${x.name}')">
+
+<div class="rank">
+${String(i+1).padStart(2,"0")}
+</div>
+
+<div class="name">
+
+${x.name}
+
+<div class="sub">
+HAN ${x.han} · EARLY ${x.early}
+</div>
+
+<div class="bar">
+<div class="fill" style="width:${score}%"></div>
+</div>
+
+</div>
+
+<div class="score">
+${score}
+</div>
+
+<div class="tag ${tagClass}">
+${x.stage}
+</div>
+
+</div>
+
+`;
+
+});
+
+document.getElementById(id).innerHTML=html;
+
+}
+
+
+function renderRising(data){
+
+let html="";
+
+data.forEach((x,i)=>{
+
+html+=`
+
+<div class="item" onclick="openSector('${x.name}')">
+
+<div class="rank">${i+1}</div>
+
+<div class="name">
+${x.name}
+<div class="sub">
+순위 상승 속도
+</div>
+</div>
+
+<div class="score green">
++${x.velocity}
+</div>
+
+<div class="tag emerge">
+🔥 RISING
+</div>
+
+</div>
+
+`;
+
+});
+
+document.getElementById("rising").innerHTML=html;
+
+}
+
+
+function renderScanner(){
+
+const sorted=[...marketData]
+.sort((a,b)=>b.han-a.han);
+
+let html="";
+
+sorted.forEach((x,i)=>{
+
+let status="NEUTRAL";
+let cls="watch";
+
+if(x.han>=75){
+status="LEADER";
+cls="leader";
+}
+
+else if(x.early>=75){
+status="EMERGING";
+cls="emerge";
+}
+
+else if(x.han<45){
+status="WEAK";
+cls="weak";
+}
+
+html+=`
+
+<div class="item" onclick="openSector('${x.name}')">
+
+<div class="rank">
+#${i+1}
+</div>
+
+<div class="name">
+
+${x.name}
+
+<div class="sub">
+HAN ${x.han} · EARLY ${x.early}
+</div>
+
+</div>
+
+<div class="score">
+${x.han}
+</div>
+
+<div class="tag ${cls}">
+${status}
+</div>
+
+</div>
+
+`;
+
+});
+
+document.getElementById("allSectors").innerHTML=html;
+
+}
+
+
+/* ==========================================
+   섹터 상세
+========================================== */
+
+let currentSector=null;
+let previous="home";
+
+function openSector(name){
+
+currentSector=marketData.find(x=>x.name===name);
+
+document.getElementById("sectorTitle").textContent=currentSector.name;
+
+document.getElementById("hanScore").textContent=currentSector.han;
+
+document.getElementById("earlyScore").textContent=currentSector.early;
+
+const sorted=[...marketData].sort((a,b)=>b.han-a.han);
+
+document.getElementById("sectorRank").textContent=
+"#"+(sorted.findIndex(x=>x.name===name)+1);
+
+document.getElementById("velocity").textContent=
+(currentSector.velocity>=0?"+":"")+currentSector.velocity;
+
+let html="";
+
+currentSector.stocks.forEach((s,i)=>{
+
+html+=`
+
+<div class="stock" onclick="openStock(${i})">
+
+<div>
+
+<strong>
+${i+1}. ${s[0]}
+</strong>
+
+<small>
+${s[1]} · 상세 분석
+</small>
+
+</div>
+
+<div class="stockScore">
+${s[2]}
+</div>
+
+</div>
+
+`;
+
+});
+
+document.getElementById("stocks").innerHTML=html;
+
+hideAll();
+
+document.getElementById("sectorPage").style.display="block";
+
+window.scrollTo(0,0);
+
+}
+
+
+/* ==========================================
+   종목 상세
+========================================== */
+
+function openStock(i){
+
+const s=currentSector.stocks[i];
+
+document.getElementById("stockTitle").textContent=s[0];
+
+document.getElementById("ticker").textContent=
+currentSector.name+" · "+s[1];
+
+document.getElementById("stockCycle").textContent=s[2];
+
+hideAll();
+
+document.getElementById("stockPage").style.display="block";
+
+window.scrollTo(0,0);
+
+}
+
+
+/* ==========================================
+   페이지 이동
+========================================== */
+
+function hideAll(){
+
+["home","scanner","sectorPage","stockPage"]
+.forEach(id=>{
+document.getElementById(id).style.display="none";
+});
+
+}
+
+
+function showScanner(){
+
+previous="scanner";
+
+hideAll();
+
+document.getElementById("scanner").style.display="block";
+
+window.scrollTo(0,0);
+
+}
+
+
+function goHome(){
+
+previous="home";
+
+hideAll();
+
+document.getElementById("home").style.display="block";
+
+window.scrollTo(0,0);
+
+}
+
+
+function backPrevious(){
+
+if(previous==="scanner"){
+showScanner();
+}else{
+goHome();
+}
+
+}
+
+
+function backSector(){
+
+hideAll();
+
+document.getElementById("sectorPage").style.display="block";
+
+window.scrollTo(0,0);
+
+}
+
+
+/* 날짜 */
+
 const d=new Date();
-document.getElementById("date").textContent=
+
+document.getElementById("today").textContent=
+
 d.getFullYear()+"."+
 String(d.getMonth()+1).padStart(2,"0")+"."+
 String(d.getDate()).padStart(2,"0");
+
+
+/* 실행 */
+
+calculate();
+
 </script>
 
 </body>
