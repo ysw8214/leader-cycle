@@ -2,274 +2,725 @@ export default async function handler(req, res) {
   try {
     const code = String(req.query.code || "").trim();
 
-    if (!code) {
+    if (!/^\d{6}$/.test(code)) {
       return res.status(400).json({
         ok: false,
-        error: "종목코드(code)가 필요합니다."
+        error: "6자리 종목코드(code)가 필요합니다."
       });
     }
 
-    // 현재 배포된 사이트 주소 자동 인식
+    /* ==========================================
+       MARKET HISTORY 호출
+    ========================================== */
+
     const protocol =
       req.headers["x-forwarded-proto"] || "https";
 
     const host = req.headers.host;
-
     const baseUrl = `${protocol}://${host}`;
 
-    // 기존에 정상 작동 확인한 market-history 사용
-    const historyUrl =
-      `${baseUrl}/api/market-history?code=${encodeURIComponent(code)}&days=100`;
-
-    const response = await fetch(historyUrl);
-
-    if (!response.ok) {
-      const text = await response.text();
-
-      return res.status(500).json({
-        ok: false,
-        error: "market-history 호출 실패",
-        detail: text
-      });
-    }
+    const response = await fetch(
+      `${baseUrl}/api/market-history?code=${encodeURIComponent(code)}&days=100`
+    );
 
     const history = await response.json();
 
-    if (!history.ok) {
+    if (!response.ok || !history.ok) {
       return res.status(500).json({
         ok: false,
-        error: "종목 데이터를 가져오지 못했습니다.",
+        error: "market-history 조회 실패",
         detail: history
       });
     }
 
-    const chart = Array.isArray(history.chart)
+    const newestFirst = Array.isArray(history.chart)
       ? history.chart
       : [];
 
-    if (chart.length === 0) {
-      return res.status(404).json({
+    if (newestFirst.length < 60) {
+      return res.status(422).json({
         ok: false,
-        error: "차트 데이터가 없습니다."
+        error: "점수 계산에 필요한 거래일 데이터가 부족합니다.",
+        collectedDays: newestFirst.length
       });
     }
 
-    const latest = chart[0];
-    const trend = history.trend || {};
+    // 과거 → 최신 순서로 변경
+    const rows = [...newestFirst].reverse();
 
-    const price = Number(trend.price || latest.close || 0);
-    const ma5 = Number(trend.ma5 || 0);
-    const ma20 = Number(trend.ma20 || 0);
-    const ma60 = Number(trend.ma60 || 0);
+    const latest = rows[rows.length - 1];
 
-    /*
-      완전 정배열
-      현재가 > MA5 > MA20 > MA60
-    */
+    /* ==========================================
+       HELPERS
+    ========================================== */
+
+    const num = value => {
+      const n = Number(value);
+      return Number.isFinite(n) ? n : 0;
+    };
+
+    const clamp = (value, min, max) =>
+      Math.max(min, Math.min(max, value));
+
+    const pct = (current, previous) => {
+      current = num(current);
+      previous = num(previous);
+
+      if (!previous) return 0;
+
+      return ((current - previous) / previous) * 100;
+    };
+
+    const average = values => {
+      const valid = values
+        .map(num)
+        .filter(v => Number.isFinite(v));
+
+      if (!valid.length) return 0;
+
+      return valid.reduce((a, b) => a + b, 0) / valid.length;
+    };
+
+    const getBack = days => {
+      const index = rows.length - 1 - days;
+      return index >= 0 ? rows[index] : null;
+    };
+
+    /* ==========================================
+       기본 가격 / 이동평균
+    ========================================== */
+
+    const close = num(latest.close);
+    const ma5 = num(latest.ma5);
+    const ma20 = num(latest.ma20);
+    const ma60 = num(latest.ma60);
+
+    const row5 = getBack(5);
+    const row10 = getBack(10);
+    const row20 = getBack(20);
+    const row60 = getBack(60);
+
+    const return5 =
+      row5 ? pct(close, row5.close) : 0;
+
+    const return10 =
+      row10 ? pct(close, row10.close) : 0;
+
+    const return20 =
+      row20 ? pct(close, row20.close) : 0;
+
+    const return60 =
+      row60 ? pct(close, row60.close) : 0;
+
+    const ma20FiveDaysAgo =
+      row5 ? num(row5.ma20) : 0;
+
+    const ma60FiveDaysAgo =
+      row5 ? num(row5.ma60) : 0;
+
+    const ma20Rising =
+      ma20 > 0 &&
+      ma20FiveDaysAgo > 0 &&
+      ma20 > ma20FiveDaysAgo;
+
+    const ma60Rising =
+      ma60 > 0 &&
+      ma60FiveDaysAgo > 0 &&
+      ma60 > ma60FiveDaysAgo;
+
     const alignment =
-      price > ma5 &&
+      close > ma5 &&
       ma5 > ma20 &&
       ma20 > ma60;
 
-    /*
-      정배열 진입 직전
+    const ma20To60Gap =
+      ma60 > 0
+        ? pct(ma20, ma60)
+        : 0;
 
-      MA5 > MA20
-      MA20 상승
-      현재가 MA60 위
-      MA20이 MA60 아래지만 3% 이내
-    */
-    let nearAlignment = false;
-    let ma20To60Gap = null;
+    const distance20 =
+      ma20 > 0
+        ? pct(close, ma20)
+        : 0;
 
-    if (ma20 > 0 && ma60 > 0) {
-      ma20To60Gap =
-        ((ma20 - ma60) / ma60) * 100;
+    const distance60 =
+      ma60 > 0
+        ? pct(close, ma60)
+        : 0;
 
-      nearAlignment =
-        !alignment &&
-        ma5 > ma20 &&
-        trend.ma20Rising === true &&
-        price > ma60 &&
-        ma20To60Gap >= -3;
+    /* ==========================================
+       거래량 / 거래대금 변화
+    ========================================== */
+
+    const recent5 = rows.slice(-5);
+    const previous20 = rows.slice(-25, -5);
+
+    const avgVolume5 =
+      average(recent5.map(x => x.volume));
+
+    const avgVolume20 =
+      average(previous20.map(x => x.volume));
+
+    const volumeRatio =
+      avgVolume20 > 0
+        ? avgVolume5 / avgVolume20
+        : 1;
+
+    const avgValue5 =
+      average(recent5.map(x => x.tradingValue));
+
+    const avgValue20 =
+      average(previous20.map(x => x.tradingValue));
+
+    const valueRatio =
+      avgValue20 > 0
+        ? avgValue5 / avgValue20
+        : 1;
+
+    /* ==========================================
+       최근 20일 고점
+    ========================================== */
+
+    const last20BeforeToday =
+      rows.slice(-21, -1);
+
+    const high20 =
+      last20BeforeToday.length
+        ? Math.max(
+            ...last20BeforeToday.map(x => num(x.high))
+          )
+        : close;
+
+    const breakout20 =
+      high20 > 0 &&
+      close > high20;
+
+    const distanceFromHigh20 =
+      high20 > 0
+        ? pct(close, high20)
+        : 0;
+
+    /* ==========================================
+       1. LEADER SCORE
+       현재 실제 주도주인가?
+       0 ~ 100
+    ========================================== */
+
+    let leaderTrend = 0;
+    let leaderAlignment = 0;
+    let leaderMomentum = 0;
+    let leaderActivity = 0;
+    let leaderPersistence = 0;
+
+    const leaderReasons = [];
+    const leaderWarnings = [];
+
+    // 추세 30점
+    if (close > ma20) {
+      leaderTrend += 6;
+      leaderReasons.push("현재가가 MA20 위");
+    } else {
+      leaderWarnings.push("현재가가 MA20 아래");
     }
 
-    /*
-      추세 점수
-      최대 40점
-    */
-    let trendScore = 0;
+    if (close > ma60) {
+      leaderTrend += 6;
+      leaderReasons.push("현재가가 MA60 위");
+    } else {
+      leaderWarnings.push("현재가가 MA60 아래");
+    }
 
-    if (price > ma20) trendScore += 8;
-    if (price > ma60) trendScore += 8;
-    if (ma5 > ma20) trendScore += 8;
-    if (trend.ma20Rising) trendScore += 8;
-    if (trend.ma60Rising) trendScore += 8;
+    if (ma5 > ma20) {
+      leaderTrend += 6;
+      leaderReasons.push("MA5 > MA20");
+    }
 
-    /*
-      정배열 점수
-      최대 25점
-    */
-    let alignmentScore = 0;
+    if (ma20Rising) {
+      leaderTrend += 6;
+      leaderReasons.push("MA20 상승 중");
+    } else {
+      leaderWarnings.push("MA20 상승 추세 미확인");
+    }
 
+    if (ma60Rising) {
+      leaderTrend += 6;
+      leaderReasons.push("MA60 상승 중");
+    } else {
+      leaderWarnings.push("MA60 상승 추세 미확인");
+    }
+
+    // 정배열 20점
     if (alignment) {
-      alignmentScore = 25;
-    } else if (nearAlignment) {
-      alignmentScore = 18;
-    } else if (ma5 > ma20) {
-      alignmentScore = 8;
-    }
+      leaderAlignment = 20;
 
-    /*
-      당일 모멘텀
-      최대 15점
-    */
-    const changeRate =
-      Number(latest.changeRate || 0);
-
-    let momentumScore = 0;
-
-    if (changeRate >= 10) {
-      momentumScore = 15;
-    } else if (changeRate >= 5) {
-      momentumScore = 12;
-    } else if (changeRate >= 2) {
-      momentumScore = 8;
-    } else if (changeRate > 0) {
-      momentumScore = 4;
-    }
-
-    /*
-      거래대금 점수
-      최대 20점
-    */
-    const tradingValue =
-      Number(latest.tradingValue || 0);
-
-    let liquidityScore = 0;
-
-    if (tradingValue >= 500000000000) {
-      liquidityScore = 20;
-    } else if (tradingValue >= 200000000000) {
-      liquidityScore = 16;
-    } else if (tradingValue >= 100000000000) {
-      liquidityScore = 12;
-    } else if (tradingValue >= 50000000000) {
-      liquidityScore = 8;
-    } else if (tradingValue >= 10000000000) {
-      liquidityScore = 4;
-    }
-
-    const leaderScore =
-      trendScore +
-      alignmentScore +
-      momentumScore +
-      liquidityScore;
-
-    let stage = "WEAK";
-
-    if (alignment && trend.ma20Rising && trend.ma60Rising) {
-      stage = "LEADER";
-    } else if (alignment) {
-      stage = "ALIGNMENT";
-    } else if (nearAlignment) {
-      stage = "EARLY";
+      leaderReasons.push(
+        "현재가 > MA5 > MA20 > MA60 완전 정배열"
+      );
     } else if (
-      price > ma20 &&
-      trend.ma20Rising
+      close > ma60 &&
+      ma5 > ma20 &&
+      ma20Rising &&
+      ma20To60Gap >= -3
     ) {
-      stage = "WATCH";
+      leaderAlignment = 13;
+
+      leaderReasons.push(
+        "정배열 전환 근접"
+      );
+
+      leaderWarnings.push(
+        "완전 정배열은 아직 미완성"
+      );
+    } else if (
+      close > ma20 &&
+      ma5 > ma20
+    ) {
+      leaderAlignment = 7;
+
+      leaderWarnings.push(
+        "단기 추세는 강하지만 장기 정배열 미완성"
+      );
     }
 
-    return res.status(200).json({
-      ok: true,
+    // 모멘텀 20점
+    if (return20 >= 15) {
+      leaderMomentum += 8;
+    } else if (return20 >= 8) {
+      leaderMomentum += 6;
+    } else if (return20 >= 3) {
+      leaderMomentum += 4;
+    } else if (return20 > 0) {
+      leaderMomentum += 2;
+    }
 
-      code,
-      name: history.name,
-      latestDate: history.latestDate,
+    if (return60 >= 25) {
+      leaderMomentum += 8;
+    } else if (return60 >= 15) {
+      leaderMomentum += 6;
+    } else if (return60 >= 5) {
+      leaderMomentum += 4;
+    } else if (return60 > 0) {
+      leaderMomentum += 2;
+    }
 
-      price,
-      changeRate,
+    if (breakout20) {
+      leaderMomentum += 4;
 
-      movingAverage: {
-        ma5,
-        ma20,
-        ma60
-      },
+      leaderReasons.push(
+        "20거래일 고점 돌파"
+      );
+    }
 
-      trend: {
-        alignment,
-        nearAlignment,
+    // 거래대금 / 거래량 20점
+    if (avgValue5 >= 500000000000) {
+      leaderActivity += 10;
+    } else if (avgValue5 >= 200000000000) {
+      leaderActivity += 8;
+    } else if (avgValue5 >= 100000000000) {
+      leaderActivity += 6;
+    } else if (avgValue5 >= 30000000000) {
+      leaderActivity += 4;
+    } else if (avgValue5 >= 10000000000) {
+      leaderActivity += 2;
+    }
 
-        ma20Rising:
-          trend.ma20Rising === true,
+    if (valueRatio >= 2) {
+      leaderActivity += 6;
+      leaderReasons.push("최근 거래대금 강하게 증가");
+    } else if (valueRatio >= 1.4) {
+      leaderActivity += 5;
+      leaderReasons.push("최근 거래대금 증가");
+    } else if (valueRatio >= 1.1) {
+      leaderActivity += 3;
+    }
 
-        ma60Rising:
-          trend.ma60Rising === true,
+    if (volumeRatio >= 1.5) {
+      leaderActivity += 4;
+      leaderReasons.push("최근 거래량 확장");
+    } else if (volumeRatio >= 1.1) {
+      leaderActivity += 2;
+    }
 
-        priceAbove20:
-          price > ma20,
+    leaderActivity =
+      clamp(leaderActivity, 0, 20);
 
-        priceAbove60:
-          price > ma60,
+    // 지속성 10점
+    if (return5 > 0) {
+      leaderPersistence += 2;
+    }
 
-        ma20To60Gap:
-          ma20To60Gap !== null
-            ? Number(ma20To60Gap.toFixed(2))
-            : null
-      },
+    if (return10 > 0) {
+      leaderPersistence += 2;
+    }
 
-      score: {
-        total: leaderScore,
-        trend: trendScore,
-        alignment: alignmentScore,
-        momentum: momentumScore,
-        liquidity: liquidityScore
-      },
+    if (return20 > 0) {
+      leaderPersistence += 3;
+    }
 
-      stage,
+    if (return60 > 0) {
+      leaderPersistence += 3;
+    }
 
-      market: {
-        tradingValue,
-        volume:
-          Number(latest.volume || 0),
+    let leaderScore =
+      leaderTrend +
+      leaderAlignment +
+      leaderMomentum +
+      leaderActivity +
+      leaderPersistence;
 
-        marketCap:
-          Number(latest.marketCap || 0)
-      },
+    leaderScore =
+      clamp(Math.round(leaderScore), 0, 100);
 
-      // 실제 차트 그릴 때 사용할 데이터
-      chart: chart.map(item => ({
-        date: item.date,
-        open: Number(item.open || 0),
-        high: Number(item.high || 0),
-        low: Number(item.low || 0),
-        close: Number(item.close || 0),
-        volume: Number(item.volume || 0),
+    /* ==========================================
+       2. EARLY SCORE
+       차기 주도주 초입인가?
+       0 ~ 100
+    ========================================== */
 
-        ma5:
-          item.ma5 == null
-            ? null
-            : Number(item.ma5),
+    let earlyTransition = 0;
+    let earlyMomentum = 0;
+    let earlyActivity = 0;
+    let earlyPosition = 0;
+    let earlyPenalty = 0;
 
-        ma20:
-          item.ma20 == null
-            ? null
-            : Number(item.ma20),
+    const earlyReasons = [];
+    const earlyWarnings = [];
 
-        ma60:
-          item.ma60 == null
-            ? null
-            : Number(item.ma60)
-      }))
-    });
+    // 추세 전환 30점
+    if (ma5 > ma20) {
+      earlyTransition += 7;
+      earlyReasons.push("MA5가 MA20 위");
+    }
 
-  } catch (error) {
-    console.error(error);
+    if (ma20Rising) {
+      earlyTransition += 8;
+      earlyReasons.push("MA20 상승 전환");
+    }
 
-    return res.status(500).json({
-      ok: false,
-      error: error.message
-    });
-  }
-}
+    if (
+      ma20To60Gap >= -3 &&
+      ma20To60Gap < 0
+    ) {
+      earlyTransition += 10;
+
+      earlyReasons.push(
+        "MA20/MA60 골든크로스 임박"
+      );
+    } else if (
+      ma20 >= ma60 &&
+      ma20To60Gap <= 5
+    ) {
+      earlyTransition += 7;
+
+      earlyReasons.push(
+        "MA20/MA60 초기 골든크로스 구간"
+      );
+    }
+
+    if (close > ma60) {
+      earlyTransition += 5;
+
+      earlyReasons.push(
+        "현재가가 MA60 위"
+      );
+    }
+
+    // 모멘텀 20점
+    if (
+      return5 > 0 &&
+      return5 <= 10
+    ) {
+      earlyMomentum += 6;
+    }
+
+    if (
+      return10 > 2 &&
+      return10 <= 18
+    ) {
+      earlyMomentum += 6;
+    }
+
+    if (
+      return20 > 3 &&
+      return20 <= 25
+    ) {
+      earlyMomentum += 8;
+
+      earlyReasons.push(
+        "중기 모멘텀 형성"
+      );
+    }
+
+    // 거래대금 / 거래량 25점
+    if (valueRatio >= 2) {
+      earlyActivity += 15;
+
+      earlyReasons.push(
+        "거래대금 20일 평균 대비 2배 이상"
+      );
+    } else if (valueRatio >= 1.5) {
+      earlyActivity += 12;
+
+      earlyReasons.push(
+        "거래대금 유입 확대"
+      );
+    } else if (valueRatio >= 1.2) {
+      earlyActivity += 8;
+    }
+
+    if (volumeRatio >= 1.8) {
+      earlyActivity += 10;
+
+      earlyReasons.push(
+        "거래량 강한 확장"
+      );
+    } else if (volumeRatio >= 1.3) {
+      earlyActivity += 7;
+    } else if (volumeRatio >= 1.1) {
+      earlyActivity += 4;
+    }
+
+    // 위치 25점
+    if (
+      distance20 >= 0 &&
+      distance20 <= 5
+    ) {
+      earlyPosition += 12;
+
+      earlyReasons.push(
+        "MA20 근처의 부담 낮은 위치"
+      );
+    } else if (
+      distance20 > 5 &&
+      distance20 <= 10
+    ) {
+      earlyPosition += 8;
+    } else if (
+      distance20 > 10 &&
+      distance20 <= 15
+    ) {
+      earlyPosition += 4;
+    }
+
+    if (
+      distance60 >= 0 &&
+      distance60 <= 10
+    ) {
+      earlyPosition += 8;
+    } else if (
+      distance60 > 10 &&
+      distance60 <= 18
+    ) {
+      earlyPosition += 4;
+    }
+
+    if (
+      distanceFromHigh20 >= -5 &&
+      distanceFromHigh20 <= 2
+    ) {
+      earlyPosition += 5;
+
+      earlyReasons.push(
+        "최근 고점 돌파 시도 구간"
+      );
+    }
+
+    // 과열 감점
+    if (return5 >= 20) {
+      earlyPenalty += 12;
+
+      earlyWarnings.push(
+        "5거래일 급등으로 초입 매력 감소"
+      );
+    }
+
+    if (return20 >= 35) {
+      earlyPenalty += 12;
+
+      earlyWarnings.push(
+        "20거래일 상승폭 과대"
+      );
+    }
+
+    if (distance20 >= 18) {
+      earlyPenalty += 10;
+
+      earlyWarnings.push(
+        "MA20 대비 과도한 이격"
+      );
+    }
+
+    let earlyScore =
+      earlyTransition +
+      earlyMomentum +
+      earlyActivity +
+      earlyPosition -
+      earlyPenalty;
+
+    earlyScore =
+      clamp(Math.round(earlyScore), 0, 100);
+
+    /* ==========================================
+       3. EXHAUSTION SCORE
+       공세 소멸 위험
+       높을수록 위험
+    ========================================== */
+
+    let exhaustionMomentum = 0;
+    let exhaustionExtension = 0;
+    let exhaustionActivity = 0;
+    let exhaustionTrend = 0;
+
+    const exhaustionReasons = [];
+
+    // 급등 후 모멘텀 둔화
+    if (
+      return20 >= 20 &&
+      return5 <= 1
+    ) {
+      exhaustionMomentum += 15;
+
+      exhaustionReasons.push(
+        "중기 급등 후 단기 모멘텀 둔화"
+      );
+    }
+
+    if (
+      return60 >= 35 &&
+      return10 < 0
+    ) {
+      exhaustionMomentum += 15;
+
+      exhaustionReasons.push(
+        "장기 강세 이후 최근 모멘텀 약화"
+      );
+    }
+
+    // 이평선 과이격
+    if (distance20 >= 25) {
+      exhaustionExtension += 25;
+
+      exhaustionReasons.push(
+        "MA20 대비 극단적 과이격"
+      );
+    } else if (distance20 >= 18) {
+      exhaustionExtension += 18;
+
+      exhaustionReasons.push(
+        "MA20 대비 높은 과이격"
+      );
+    } else if (distance20 >= 12) {
+      exhaustionExtension += 10;
+    }
+
+    // 대량 거래 이후 가격 정체
+    if (
+      volumeRatio >= 2 &&
+      return5 <= 1
+    ) {
+      exhaustionActivity += 12;
+
+      exhaustionReasons.push(
+        "대량 거래에도 가격 상승 둔화"
+      );
+    }
+
+    if (
+      valueRatio >= 2 &&
+      return5 < 0
+    ) {
+      exhaustionActivity += 13;
+
+      exhaustionReasons.push(
+        "거래대금 급증 중 가격 약세"
+      );
+    }
+
+    // 추세 붕괴
+    if (close < ma5) {
+      exhaustionTrend += 8;
+
+      exhaustionReasons.push(
+        "현재가 MA5 이탈"
+      );
+    }
+
+    if (close < ma20) {
+      exhaustionTrend += 17;
+
+      exhaustionReasons.push(
+        "현재가 MA20 이탈"
+      );
+    }
+
+    if (
+      ma5 < ma20 &&
+      return60 > 15
+    ) {
+      exhaustionTrend += 10;
+
+      exhaustionReasons.push(
+        "강한 상승 이후 MA5/MA20 약화"
+      );
+    }
+
+    let exhaustionScore =
+      exhaustionMomentum +
+      exhaustionExtension +
+      exhaustionActivity +
+      exhaustionTrend;
+
+    exhaustionScore =
+      clamp(Math.round(exhaustionScore), 0, 100);
+
+    /* ==========================================
+       4. ENTRY SCORE
+       지금 신규 매수하기 좋은가?
+       0 ~ 100
+    ========================================== */
+
+    let entryTrend = 0;
+    let entryPosition = 0;
+    let entryMomentum = 0;
+    let entryActivity = 0;
+
+    const entryReasons = [];
+    const entryWarnings = [];
+
+    // 추세 30점
+    if (close > ma20) entryTrend += 6;
+    if (close > ma60) entryTrend += 6;
+    if (ma5 > ma20) entryTrend += 6;
+    if (ma20Rising) entryTrend += 6;
+    if (ma60Rising) entryTrend += 6;
+
+    if (entryTrend >= 24) {
+      entryReasons.push(
+        "주요 추세 조건 양호"
+      );
+    }
+
+    // 진입 위치 30점
+    if (
+      distance20 >= 0 &&
+      distance20 <= 4
+    ) {
+      entryPosition += 18;
+
+      entryReasons.push(
+        "MA20 대비 이격 부담 낮음"
+      );
+    } else if (
+      distance20 > 4 &&
+      distance20 <= 8
+    ) {
+      entryPosition += 13;
+    } else if (
+      distance20 > 8 &&
+      distance20 <= 12
+    ) {
+      entryPosition += 7;
+    } else if (
+      distance20 > 15
+    ) {
+     
