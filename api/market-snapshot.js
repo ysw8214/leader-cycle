@@ -1,16 +1,5 @@
 module.exports = async function handler(req, res) {
   try {
-    /* ==========================================
-       LEADER CYCLE - MARKET SNAPSHOT
-
-       KRX
-       - KOSPI
-       - KOSDAQ
-
-       두 시장을 병렬 조회해서
-       market-scan.js가 사용할 공통 형식으로 반환
-    ========================================== */
-
     const KRX_API_KEY = process.env.KRX_API_KEY;
 
     if (!KRX_API_KEY) {
@@ -20,32 +9,27 @@ module.exports = async function handler(req, res) {
       });
     }
 
-
-    /* ==========================================
-       DATE
-    ========================================== */
-
-    const rawDate = req.query.date;
+    const rawDate = String(req.query.date || "").trim();
 
     let basDd;
 
     if (rawDate) {
-      basDd = String(rawDate).replace(/-/g, "");
+      basDd = rawDate.replace(/-/g, "");
     } else {
       const now = new Date();
 
       const koreaTime = new Date(
-        now.getTime() + 9 * 60 * 60 * 1000
+        now.toLocaleString("en-US", {
+          timeZone: "Asia/Seoul"
+        })
       );
 
-      const year = koreaTime.getUTCFullYear();
-
+      const year = koreaTime.getFullYear();
       const month = String(
-        koreaTime.getUTCMonth() + 1
+        koreaTime.getMonth() + 1
       ).padStart(2, "0");
-
       const day = String(
-        koreaTime.getUTCDate()
+        koreaTime.getDate()
       ).padStart(2, "0");
 
       basDd = `${year}${month}${day}`;
@@ -55,25 +39,15 @@ module.exports = async function handler(req, res) {
       return res.status(400).json({
         ok: false,
         error: "date 형식이 올바르지 않습니다.",
-        example: "20260924"
+        example: "20260923"
       });
     }
-
-
-    /* ==========================================
-       KRX URL
-    ========================================== */
 
     const KOSPI_URL =
       `https://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd?basDd=${basDd}`;
 
     const KOSDAQ_URL =
       `https://data-dbg.krx.co.kr/svc/apis/sto/ksq_bydd_trd?basDd=${basDd}`;
-
-
-    /* ==========================================
-       NUMBER PARSER
-    ========================================== */
 
     function num(value) {
       if (
@@ -93,16 +67,10 @@ module.exports = async function handler(req, res) {
         : 0;
     }
 
-
-    /* ==========================================
-       KRX FETCH
-    ========================================== */
-
     async function fetchKRX(url, market) {
       try {
         const response = await fetch(url, {
           method: "GET",
-
           headers: {
             AUTH_KEY: KRX_API_KEY,
             Accept: "application/json"
@@ -117,7 +85,6 @@ module.exports = async function handler(req, res) {
             market,
             status: response.status,
             error: `KRX HTTP ${response.status}`,
-            raw: text.slice(0, 300),
             rows: []
           };
         }
@@ -126,24 +93,15 @@ module.exports = async function handler(req, res) {
 
         try {
           data = JSON.parse(text);
-        } catch (error) {
+        } catch {
           return {
             ok: false,
             market,
             status: response.status,
-            error: "KRX 응답 JSON 파싱 실패",
-            raw: text.slice(0, 300),
+            error: "KRX JSON 파싱 실패",
             rows: []
           };
         }
-
-        /*
-          KRX Open API의 일별매매정보 응답은
-          보통 OutBlock_1 배열에 들어온다.
-
-          혹시 응답 구조가 조금 달라져도
-          배열을 최대한 찾아서 대응한다.
-        */
 
         let rows = [];
 
@@ -178,124 +136,126 @@ module.exports = async function handler(req, res) {
       }
     }
 
-
-    /* ==========================================
-       KOSPI + KOSDAQ 병렬 조회
-    ========================================== */
-
     const [kospiResult, kosdaqResult] =
       await Promise.all([
         fetchKRX(KOSPI_URL, "KOSPI"),
         fetchKRX(KOSDAQ_URL, "KOSDAQ")
       ]);
 
-
-    /* ==========================================
-       NORMALIZE
-    ========================================== */
-
     function normalizeRow(row, market) {
-      const code =
-        row.ISU_SRT_CD ||
-        row.ISU_CD ||
-        row.SRT_CD ||
-        "";
-
-      const name =
-        row.ISU_ABBRV ||
-        row.ISU_NM ||
-        row.ITMS_NM ||
-        "";
-
-      const close =
-        num(
-          row.TDD_CLSPRC ??
-          row.CLSPRC ??
-          row.CLOSE
-        );
-
-      const changeRate =
-        num(
-          row.FLUC_RT ??
-          row.CHG_RT ??
-          row.CHANGE_RATE
-        );
-
-      const volume =
-        num(
-          row.ACC_TRDVOL ??
-          row.TRDVOL ??
-          row.VOLUME
-        );
-
-      const tradingValue =
-        num(
-          row.ACC_TRDVAL ??
-          row.TRDVAL ??
-          row.TRADING_VALUE
-        );
-
-      const marketCap =
-        num(
-          row.MKTCAP ??
-          row.MKT_CAP ??
-          row.MARKET_CAP
-        );
-
       return {
-        code: String(code).trim(),
-        name: String(name).trim(),
+        date:
+          String(
+            row.BAS_DD ||
+            basDd
+          ).trim(),
+
+        code:
+          String(
+            row.ISU_SRT_CD ||
+            row.ISU_CD ||
+            row.SRT_CD ||
+            ""
+          ).trim(),
+
+        name:
+          String(
+            row.ISU_ABBRV ||
+            row.ISU_NM ||
+            row.ITMS_NM ||
+            ""
+          ).trim(),
+
         market,
-        close,
-        changeRate,
-        volume,
-        tradingValue,
-        marketCap
+
+        open:
+          num(
+            row.TDD_OPNPRC ??
+            row.OPNPRC ??
+            row.OPEN
+          ),
+
+        high:
+          num(
+            row.TDD_HGPRC ??
+            row.HGPRC ??
+            row.HIGH
+          ),
+
+        low:
+          num(
+            row.TDD_LWPRC ??
+            row.LWPRC ??
+            row.LOW
+          ),
+
+        close:
+          num(
+            row.TDD_CLSPRC ??
+            row.CLSPRC ??
+            row.CLOSE
+          ),
+
+        changeRate:
+          num(
+            row.FLUC_RT ??
+            row.CHG_RT ??
+            row.CHANGE_RATE
+          ),
+
+        volume:
+          num(
+            row.ACC_TRDVOL ??
+            row.TRDVOL ??
+            row.VOLUME
+          ),
+
+        tradingValue:
+          num(
+            row.ACC_TRDVAL ??
+            row.TRDVAL ??
+            row.TRADING_VALUE
+          ),
+
+        marketCap:
+          num(
+            row.MKTCAP ??
+            row.MKT_CAP ??
+            row.MARKET_CAP
+          )
       };
     }
 
+    const kospiStocks =
+      kospiResult.rows
+        .map(row =>
+          normalizeRow(row, "KOSPI")
+        )
+        .filter(stock =>
+          stock.code &&
+          stock.name
+        );
 
-    /* ==========================================
-       KOSPI NORMALIZE
-    ========================================== */
-
-    const kospiStocks = kospiResult.rows
-      .map(row =>
-        normalizeRow(row, "KOSPI")
-      )
-      .filter(stock =>
-        stock.code &&
-        stock.name
-      );
-
-
-    /* ==========================================
-       KOSDAQ NORMALIZE
-    ========================================== */
-
-    const kosdaqStocks = kosdaqResult.rows
-      .map(row =>
-        normalizeRow(row, "KOSDAQ")
-      )
-      .filter(stock =>
-        stock.code &&
-        stock.name
-      );
-
-
-    /* ==========================================
-       MERGE
-    ========================================== */
+    const kosdaqStocks =
+      kosdaqResult.rows
+        .map(row =>
+          normalizeRow(row, "KOSDAQ")
+        )
+        .filter(stock =>
+          stock.code &&
+          stock.name
+        );
 
     const stocks = [
       ...kospiStocks,
       ...kosdaqStocks
     ];
 
-
-    /* ==========================================
-       SOURCE STATUS
-    ========================================== */
+    const marketCount = {
+      kospi: kospiStocks.length,
+      kosdaq: kosdaqStocks.length,
+      total: stocks.length
+    };
 
     const sources = {
       kospi: {
@@ -323,22 +283,6 @@ module.exports = async function handler(req, res) {
       }
     };
 
-
-    /* ==========================================
-       MARKET COUNT
-    ========================================== */
-
-    const marketCount = {
-      kospi: kospiStocks.length,
-      kosdaq: kosdaqStocks.length,
-      total: stocks.length
-    };
-
-
-    /* ==========================================
-       BOTH SOURCES FAILED
-    ========================================== */
-
     if (
       !kospiResult.ok &&
       !kosdaqResult.ok
@@ -346,28 +290,20 @@ module.exports = async function handler(req, res) {
       return res.status(502).json({
         ok: false,
         date: basDd,
-
         error:
-          "KOSPI와 KOSDAQ KRX 조회가 모두 실패했습니다.",
-
+          "KOSPI와 KOSDAQ 조회가 모두 실패했습니다.",
         marketCount,
-
         sources
       });
     }
 
-
-    /* ==========================================
-       RESPONSE
-
-       한 시장만 성공해도 데이터는 반환한다.
-       sources를 보면 어느 시장이 실패했는지
-       확인 가능하다.
-    ========================================== */
+    res.setHeader(
+      "Cache-Control",
+      "public, s-maxage=1800, stale-while-revalidate=86400"
+    );
 
     return res.status(200).json({
       ok: true,
-
       date: basDd,
 
       partial:
@@ -375,24 +311,23 @@ module.exports = async function handler(req, res) {
         !kosdaqResult.ok,
 
       marketCount,
-
       sources,
-
       stocks
     });
 
   } catch (error) {
     console.error(
-      "[market-snapshot]",
+      "MARKET SNAPSHOT ERROR",
       error
     );
 
     return res.status(500).json({
       ok: false,
-
       error:
-        error?.message ||
-        "market-snapshot 내부 오류"
+        String(
+          error?.message ||
+          error
+        )
     });
   }
 };
