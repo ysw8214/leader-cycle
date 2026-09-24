@@ -1,6 +1,7 @@
 module.exports = async function handler(req, res) {
   try {
     const code = String(req.query.code || "").trim();
+    const requestedDate = String(req.query.date || "").trim();
 
     if (!/^\d{6}$/.test(code)) {
       return res.status(400).json({
@@ -9,13 +10,19 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    // --------------------------------------------------
-    // 기본 설정
-    // --------------------------------------------------
+    if (
+      requestedDate &&
+      !/^\d{8}$/.test(requestedDate)
+    ) {
+      return res.status(400).json({
+        ok: false,
+        error: "date는 YYYYMMDD 형식이어야 합니다."
+      });
+    }
 
     res.setHeader(
       "Cache-Control",
-      "public, s-maxage=300, stale-while-revalidate=1800"
+      "public, s-maxage=1800, stale-while-revalidate=3600"
     );
 
     const protocol =
@@ -31,55 +38,6 @@ module.exports = async function handler(req, res) {
     }
 
     const baseUrl = `${protocol}://${host}`;
-
-    // --------------------------------------------------
-    // MARKET HISTORY
-    // --------------------------------------------------
-
-    const historyResponse = await fetch(
-      `${baseUrl}/api/market-history?code=${encodeURIComponent(code)}&days=100`
-    );
-
-    let history;
-
-    try {
-      history = await historyResponse.json();
-    } catch (e) {
-      return res.status(500).json({
-        ok: false,
-        error: "market-history 응답을 읽지 못했습니다."
-      });
-    }
-
-    if (!historyResponse.ok || !history.ok) {
-      return res.status(500).json({
-        ok: false,
-        error: "market-history 조회 실패",
-        detail: history
-      });
-    }
-
-    const newestFirst =
-      Array.isArray(history.chart)
-        ? history.chart
-        : [];
-
-    if (newestFirst.length < 60) {
-      return res.status(422).json({
-        ok: false,
-        error: "점수 계산에 필요한 데이터가 부족합니다.",
-        collectedDays: newestFirst.length
-      });
-    }
-
-    // 과거 -> 최신
-    const rows = [...newestFirst].reverse();
-
-    const latest = rows[rows.length - 1];
-
-    // --------------------------------------------------
-    // HELPERS
-    // --------------------------------------------------
 
     function num(value) {
       const n = Number(value);
@@ -97,7 +55,9 @@ module.exports = async function handler(req, res) {
       current = num(current);
       previous = num(previous);
 
-      if (!previous) return 0;
+      if (!previous) {
+        return 0;
+      }
 
       return (
         ((current - previous) / previous) *
@@ -112,19 +72,111 @@ module.exports = async function handler(req, res) {
 
       const valid = values
         .map(num)
-        .filter(function (v) {
-          return Number.isFinite(v);
-        });
+        .filter(value =>
+          Number.isFinite(value)
+        );
 
       if (!valid.length) {
         return 0;
       }
 
       return (
-        valid.reduce(function (a, b) {
-          return a + b;
-        }, 0) / valid.length
+        valid.reduce(
+          (a, b) => a + b,
+          0
+        ) / valid.length
       );
+    }
+
+    /* ==========================================
+       MARKET HISTORY
+
+       rankings에서 받은 date를 그대로 전달
+    ========================================== */
+
+    const historyParams =
+      new URLSearchParams({
+        code,
+        days: "100"
+      });
+
+    if (requestedDate) {
+      historyParams.set(
+        "date",
+        requestedDate
+      );
+    }
+
+    const historyUrl =
+      `${baseUrl}/api/market-history?${historyParams.toString()}`;
+
+    const historyResponse =
+      await fetch(historyUrl);
+
+    let history;
+
+    try {
+      history =
+        await historyResponse.json();
+    } catch {
+      return res.status(500).json({
+        ok: false,
+        error:
+          "market-history 응답을 읽지 못했습니다."
+      });
+    }
+
+    if (
+      !historyResponse.ok ||
+      !history.ok
+    ) {
+      return res.status(
+        historyResponse.status || 500
+      ).json({
+        ok: false,
+        error:
+          "market-history 조회 실패",
+        detail: history
+      });
+    }
+
+    const newestFirst =
+      Array.isArray(history.chart)
+        ? history.chart
+        : [];
+
+    if (
+      newestFirst.length < 60
+    ) {
+      return res.status(422).json({
+        ok: false,
+        error:
+          "점수 계산에 필요한 데이터가 부족합니다.",
+        collectedDays:
+          newestFirst.length
+      });
+    }
+
+    /*
+      market-history:
+      최신 -> 과거
+
+      stock-detail:
+      과거 -> 최신
+    */
+
+    const rows =
+      [...newestFirst].reverse();
+
+    const latest =
+      rows[rows.length - 1];
+
+    if (!latest) {
+      return res.status(422).json({
+        ok: false,
+        error:
+          "최신 거래일 데이터를 찾지 못했습니다."
+      });
     }
 
     function getBack(days) {
@@ -138,43 +190,81 @@ module.exports = async function handler(req, res) {
       return rows[index];
     }
 
-    // --------------------------------------------------
-    // 현재 데이터
-    // --------------------------------------------------
+    /* ==========================================
+       현재 데이터
+    ========================================== */
 
-    const close = num(latest.close);
-    const ma5 = num(latest.ma5);
-    const ma20 = num(latest.ma20);
-    const ma60 = num(latest.ma60);
+    const close =
+      num(latest.close);
 
-    const row5 = getBack(5);
-    const row10 = getBack(10);
-    const row20 = getBack(20);
-    const row60 = getBack(60);
+    const ma5 =
+      num(latest.ma5);
+
+    const ma20 =
+      num(latest.ma20);
+
+    const ma60 =
+      num(latest.ma60);
+
+    if (
+      close <= 0 ||
+      ma20 <= 0 ||
+      ma60 <= 0
+    ) {
+      return res.status(422).json({
+        ok: false,
+        error:
+          "이동평균 계산에 필요한 데이터가 부족합니다."
+      });
+    }
+
+    const row5 =
+      getBack(5);
+
+    const row10 =
+      getBack(10);
+
+    const row20 =
+      getBack(20);
+
+    const row60 =
+      getBack(60);
 
     const return5 =
       row5
-        ? pct(close, row5.close)
+        ? pct(
+            close,
+            row5.close
+          )
         : 0;
 
     const return10 =
       row10
-        ? pct(close, row10.close)
+        ? pct(
+            close,
+            row10.close
+          )
         : 0;
 
     const return20 =
       row20
-        ? pct(close, row20.close)
+        ? pct(
+            close,
+            row20.close
+          )
         : 0;
 
     const return60 =
       row60
-        ? pct(close, row60.close)
+        ? pct(
+            close,
+            row60.close
+          )
         : 0;
 
-    // --------------------------------------------------
-    // 이동평균 방향
-    // --------------------------------------------------
+    /* ==========================================
+       이동평균 방향
+    ========================================== */
 
     const ma20FiveDaysAgo =
       row5
@@ -203,22 +293,31 @@ module.exports = async function handler(req, res) {
 
     const ma20To60Gap =
       ma60 > 0
-        ? pct(ma20, ma60)
+        ? pct(
+            ma20,
+            ma60
+          )
         : 0;
 
     const distance20 =
       ma20 > 0
-        ? pct(close, ma20)
+        ? pct(
+            close,
+            ma20
+          )
         : 0;
 
     const distance60 =
       ma60 > 0
-        ? pct(close, ma60)
+        ? pct(
+            close,
+            ma60
+          )
         : 0;
 
-    // --------------------------------------------------
-    // 거래량 / 거래대금
-    // --------------------------------------------------
+    /* ==========================================
+       거래량 / 거래대금
+    ========================================== */
 
     const recent5 =
       rows.slice(-5);
@@ -228,58 +327,69 @@ module.exports = async function handler(req, res) {
 
     const avgVolume5 =
       average(
-        recent5.map(function (x) {
-          return x.volume;
-        })
+        recent5.map(
+          row => row.volume
+        )
       );
 
     const avgVolume20 =
       average(
-        previous20.map(function (x) {
-          return x.volume;
-        })
+        previous20.map(
+          row => row.volume
+        )
       );
 
     const volumeRatio =
       avgVolume20 > 0
-        ? avgVolume5 / avgVolume20
+        ? avgVolume5 /
+          avgVolume20
         : 1;
 
     const avgValue5 =
       average(
-        recent5.map(function (x) {
-          return x.tradingValue;
-        })
+        recent5.map(
+          row =>
+            row.tradingValue
+        )
       );
 
     const avgValue20 =
       average(
-        previous20.map(function (x) {
-          return x.tradingValue;
-        })
+        previous20.map(
+          row =>
+            row.tradingValue
+        )
       );
 
     const valueRatio =
       avgValue20 > 0
-        ? avgValue5 / avgValue20
+        ? avgValue5 /
+          avgValue20
         : 1;
 
-    // --------------------------------------------------
-    // 20일 고점
-    // --------------------------------------------------
+    /* ==========================================
+       20일 고점
+    ========================================== */
 
     const last20BeforeToday =
       rows.slice(-21, -1);
 
-    let high20 = close;
+    let high20 =
+      close;
 
-    if (last20BeforeToday.length) {
-      high20 = Math.max.apply(
-        null,
-        last20BeforeToday.map(function (x) {
-          return num(x.high);
-        })
-      );
+    if (
+      last20BeforeToday.length
+    ) {
+      high20 =
+        Math.max(
+          ...last20BeforeToday.map(
+            row =>
+              num(
+                row.high ||
+                row.close
+              )
+          )
+        );
     }
 
     const breakout20 =
@@ -288,13 +398,15 @@ module.exports = async function handler(req, res) {
 
     const distanceFromHigh20 =
       high20 > 0
-        ? pct(close, high20)
+        ? pct(
+            close,
+            high20
+          )
         : 0;
 
-    // ==================================================
-    // 1. LEADER SCORE
-    // 현재 실제 주도주인가?
-    // ==================================================
+    /* ==========================================
+       1. LEADER SCORE
+    ========================================== */
 
     let leaderTrend = 0;
     let leaderAlignment = 0;
@@ -304,8 +416,6 @@ module.exports = async function handler(req, res) {
 
     const leaderReasons = [];
     const leaderWarnings = [];
-
-    // 추세 30점
 
     if (close > ma20) {
       leaderTrend += 6;
@@ -358,8 +468,6 @@ module.exports = async function handler(req, res) {
       );
     }
 
-    // 정배열 20점
-
     if (alignment) {
       leaderAlignment = 20;
 
@@ -392,25 +500,35 @@ module.exports = async function handler(req, res) {
       );
     }
 
-    // 모멘텀 20점
-
     if (return20 >= 15) {
       leaderMomentum += 8;
-    } else if (return20 >= 8) {
+    } else if (
+      return20 >= 8
+    ) {
       leaderMomentum += 6;
-    } else if (return20 >= 3) {
+    } else if (
+      return20 >= 3
+    ) {
       leaderMomentum += 4;
-    } else if (return20 > 0) {
+    } else if (
+      return20 > 0
+    ) {
       leaderMomentum += 2;
     }
 
     if (return60 >= 25) {
       leaderMomentum += 8;
-    } else if (return60 >= 15) {
+    } else if (
+      return60 >= 15
+    ) {
       leaderMomentum += 6;
-    } else if (return60 >= 5) {
+    } else if (
+      return60 >= 5
+    ) {
       leaderMomentum += 4;
-    } else if (return60 > 0) {
+    } else if (
+      return60 > 0
+    ) {
       leaderMomentum += 2;
     }
 
@@ -422,24 +540,29 @@ module.exports = async function handler(req, res) {
       );
     }
 
-    // 거래활동 20점
-
-    if (avgValue5 >= 500000000000) {
+    if (
+      avgValue5 >=
+      500000000000
+    ) {
       leaderActivity += 10;
     } else if (
-      avgValue5 >= 200000000000
+      avgValue5 >=
+      200000000000
     ) {
       leaderActivity += 8;
     } else if (
-      avgValue5 >= 100000000000
+      avgValue5 >=
+      100000000000
     ) {
       leaderActivity += 6;
     } else if (
-      avgValue5 >= 30000000000
+      avgValue5 >=
+      30000000000
     ) {
       leaderActivity += 4;
     } else if (
-      avgValue5 >= 10000000000
+      avgValue5 >=
+      10000000000
     ) {
       leaderActivity += 2;
     }
@@ -450,13 +573,17 @@ module.exports = async function handler(req, res) {
       leaderReasons.push(
         "최근 거래대금 강하게 증가"
       );
-    } else if (valueRatio >= 1.4) {
+    } else if (
+      valueRatio >= 1.4
+    ) {
       leaderActivity += 5;
 
       leaderReasons.push(
         "최근 거래대금 증가"
       );
-    } else if (valueRatio >= 1.1) {
+    } else if (
+      valueRatio >= 1.1
+    ) {
       leaderActivity += 3;
     }
 
@@ -478,8 +605,6 @@ module.exports = async function handler(req, res) {
         0,
         20
       );
-
-    // 지속성 10점
 
     if (return5 > 0) {
       leaderPersistence += 2;
@@ -506,15 +631,16 @@ module.exports = async function handler(req, res) {
 
     leaderScore =
       clamp(
-        Math.round(leaderScore),
+        Math.round(
+          leaderScore
+        ),
         0,
         100
       );
 
-    // ==================================================
-    // 2. EARLY SCORE
-    // 차기 주도주 초입인가?
-    // ==================================================
+    /* ==========================================
+       2. EARLY SCORE
+    ========================================== */
 
     let earlyTransition = 0;
     let earlyMomentum = 0;
@@ -524,8 +650,6 @@ module.exports = async function handler(req, res) {
 
     const earlyReasons = [];
     const earlyWarnings = [];
-
-    // 전환 30점
 
     if (ma5 > ma20) {
       earlyTransition += 7;
@@ -571,8 +695,6 @@ module.exports = async function handler(req, res) {
       );
     }
 
-    // 모멘텀 20점
-
     if (
       return5 > 0 &&
       return5 <= 10
@@ -597,8 +719,6 @@ module.exports = async function handler(req, res) {
         "중기 모멘텀 형성"
       );
     }
-
-    // 거래활동 25점
 
     if (valueRatio >= 2) {
       earlyActivity += 15;
@@ -635,8 +755,6 @@ module.exports = async function handler(req, res) {
     ) {
       earlyActivity += 4;
     }
-
-    // 위치 25점
 
     if (
       distance20 >= 0 &&
@@ -682,8 +800,6 @@ module.exports = async function handler(req, res) {
       );
     }
 
-    // 과열 감점
-
     if (return5 >= 20) {
       earlyPenalty += 12;
 
@@ -717,15 +833,16 @@ module.exports = async function handler(req, res) {
 
     earlyScore =
       clamp(
-        Math.round(earlyScore),
+        Math.round(
+          earlyScore
+        ),
         0,
         100
       );
 
-    // ==================================================
-    // 3. EXHAUSTION SCORE
-    // 공세 소멸 위험
-    // ==================================================
+    /* ==========================================
+       3. EXHAUSTION SCORE
+    ========================================== */
 
     let exhaustionMomentum = 0;
     let exhaustionExtension = 0;
@@ -833,15 +950,16 @@ module.exports = async function handler(req, res) {
 
     exhaustionScore =
       clamp(
-        Math.round(exhaustionScore),
+        Math.round(
+          exhaustionScore
+        ),
         0,
         100
       );
 
-    // ==================================================
-    // 4. ENTRY SCORE
-    // 지금 신규매수하기 좋은가?
-    // ==================================================
+    /* ==========================================
+       4. ENTRY SCORE
+    ========================================== */
 
     let entryTrend = 0;
     let entryPosition = 0;
@@ -850,8 +968,6 @@ module.exports = async function handler(req, res) {
 
     const entryReasons = [];
     const entryWarnings = [];
-
-    // 추세 30점
 
     if (close > ma20) {
       entryTrend += 6;
@@ -878,8 +994,6 @@ module.exports = async function handler(req, res) {
         "주요 추세 조건 양호"
       );
     }
-
-    // 위치 30점
 
     if (
       distance20 >= 0 &&
@@ -930,8 +1044,6 @@ module.exports = async function handler(req, res) {
       );
     }
 
-    // 모멘텀 20점
-
     if (
       return5 > 0 &&
       return5 <= 8
@@ -952,8 +1064,6 @@ module.exports = async function handler(req, res) {
     ) {
       entryMomentum += 7;
     }
-
-    // 거래활동 20점
 
     if (valueRatio >= 2) {
       entryActivity += 12;
@@ -987,13 +1097,11 @@ module.exports = async function handler(req, res) {
       entryActivity += 3;
     }
 
-    // --------------------------------------------------
-    // 공세 소멸 감점
-    // --------------------------------------------------
-
     let exhaustionPenalty = 0;
 
-    if (exhaustionScore >= 75) {
+    if (
+      exhaustionScore >= 75
+    ) {
       exhaustionPenalty = 50;
 
       entryWarnings.push(
@@ -1016,10 +1124,6 @@ module.exports = async function handler(req, res) {
         "공세 소멸 위험 일부 존재"
       );
     }
-
-    // --------------------------------------------------
-    // 추격매수 감점
-    // --------------------------------------------------
 
     let chasePenalty = 0;
 
@@ -1049,154 +1153,241 @@ module.exports = async function handler(req, res) {
 
     entryScore =
       clamp(
-        Math.round(entryScore),
+        Math.round(
+          entryScore
+        ),
         0,
         100
       );
 
-    // ==================================================
-    // STAGE
-    // ==================================================
+    /* ==========================================
+       STAGE
+    ========================================== */
 
-    let stage = "DISCOVERY";
+    let stage =
+      "DISCOVERY";
 
-    if (exhaustionScore >= 75) {
-      stage = "EXHAUSTING";
+    if (
+      exhaustionScore >= 75
+    ) {
+      stage =
+        "EXHAUSTING";
     } else if (
       close < ma20 &&
       ma5 < ma20
     ) {
-      stage = "BROKEN";
+      stage =
+        "BROKEN";
     } else if (
       leaderScore >= 80 &&
       alignment
     ) {
-      stage = "LEADER";
+      stage =
+        "LEADER";
     } else if (
       leaderScore >= 70 &&
       exhaustionScore >= 40
     ) {
-      stage = "MATURE";
+      stage =
+        "MATURE";
     } else if (
       earlyScore >= 70
     ) {
-      stage = "EMERGING";
+      stage =
+        "EMERGING";
     } else if (
       leaderScore >= 60
     ) {
-      stage = "WATCH";
+      stage =
+        "WATCH";
     }
 
-    // ==================================================
-    // 신규매수 상태
-    // ==================================================
+    /* ==========================================
+       ENTRY STATUS
+    ========================================== */
 
-    let entryStatus = "WAIT";
+    let entryStatus =
+      "WAIT";
 
-    if (exhaustionScore >= 75) {
-      entryStatus = "BLOCKED";
-    } else if (entryScore >= 80) {
-      entryStatus = "ATTRACTIVE";
-    } else if (entryScore >= 65) {
-      entryStatus = "WATCH";
-    } else if (entryScore >= 50) {
-      entryStatus = "NEUTRAL";
+    if (
+      exhaustionScore >= 75
+    ) {
+      entryStatus =
+        "BLOCKED";
+    } else if (
+      entryScore >= 80
+    ) {
+      entryStatus =
+        "ATTRACTIVE";
+    } else if (
+      entryScore >= 65
+    ) {
+      entryStatus =
+        "WATCH";
+    } else if (
+      entryScore >= 50
+    ) {
+      entryStatus =
+        "NEUTRAL";
     } else {
-      entryStatus = "AVOID";
+      entryStatus =
+        "AVOID";
     }
-
-    // ==================================================
-    // RESPONSE
-    // ==================================================
 
     return res.status(200).json({
       ok: true,
 
-      version: "STOCK_DETAIL_V2",
+      version:
+        "STOCK_DETAIL_V3",
 
-      code: code,
-      name: history.name,
-      date: history.latestDate,
+      code,
 
-      price: close,
-      changeRate: num(latest.changeRate),
+      name:
+        history.name,
 
-      stage: stage,
+      market:
+        history.market || null,
+
+      requestedDate:
+        requestedDate || null,
+
+      date:
+        history.latestDate,
+
+      price:
+        close,
+
+      changeRate:
+        num(
+          latest.changeRate
+        ),
+
+      stage,
 
       scores: {
-        leader: leaderScore,
-        early: earlyScore,
-        entry: entryScore,
-        exhaustion: exhaustionScore
+        leader:
+          leaderScore,
+
+        early:
+          earlyScore,
+
+        entry:
+          entryScore,
+
+        exhaustion:
+          exhaustionScore
       },
 
       scoreGuide: {
         leader:
           "현재 실제 주도주로서 추세·정배열·모멘텀·거래활동·지속성을 평가",
+
         early:
           "아직 과도하게 오르기 전 차기 주도주 전환 가능성을 평가",
+
         entry:
           "현재 가격에서 신규 매수하기 좋은 위치인지 평가",
+
         exhaustion:
           "공세 소멸 및 추세 종료 위험. 높을수록 신규매수에 불리"
       },
 
-      entryStatus: entryStatus,
+      entryStatus,
 
       blocked:
         exhaustionScore >= 75,
 
       scoreDetail: {
         leader: {
-          score: leaderScore,
+          score:
+            leaderScore,
 
           components: {
-            trend: leaderTrend,
-            alignment: leaderAlignment,
-            momentum: leaderMomentum,
-            activity: leaderActivity,
-            persistence: leaderPersistence
+            trend:
+              leaderTrend,
+
+            alignment:
+              leaderAlignment,
+
+            momentum:
+              leaderMomentum,
+
+            activity:
+              leaderActivity,
+
+            persistence:
+              leaderPersistence
           },
 
-          reasons: leaderReasons,
-          warnings: leaderWarnings
+          reasons:
+            leaderReasons,
+
+          warnings:
+            leaderWarnings
         },
 
         early: {
-          score: earlyScore,
+          score:
+            earlyScore,
 
           components: {
-            transition: earlyTransition,
-            momentum: earlyMomentum,
-            activity: earlyActivity,
-            position: earlyPosition,
-            penalty: -earlyPenalty
+            transition:
+              earlyTransition,
+
+            momentum:
+              earlyMomentum,
+
+            activity:
+              earlyActivity,
+
+            position:
+              earlyPosition,
+
+            penalty:
+              -earlyPenalty
           },
 
-          reasons: earlyReasons,
-          warnings: earlyWarnings
+          reasons:
+            earlyReasons,
+
+          warnings:
+            earlyWarnings
         },
 
         entry: {
-          score: entryScore,
+          score:
+            entryScore,
 
           components: {
-            trend: entryTrend,
-            position: entryPosition,
-            momentum: entryMomentum,
-            activity: entryActivity,
+            trend:
+              entryTrend,
+
+            position:
+              entryPosition,
+
+            momentum:
+              entryMomentum,
+
+            activity:
+              entryActivity,
+
             exhaustionPenalty:
               -exhaustionPenalty,
+
             chasePenalty:
               -chasePenalty
           },
 
-          reasons: entryReasons,
-          warnings: entryWarnings
+          reasons:
+            entryReasons,
+
+          warnings:
+            entryWarnings
         },
 
         exhaustion: {
-          score: exhaustionScore,
+          score:
+            exhaustionScore,
 
           components: {
             momentumDecay:
@@ -1218,9 +1409,11 @@ module.exports = async function handler(req, res) {
       },
 
       signals: {
-        alignment: alignment,
-        ma20Rising: ma20Rising,
-        ma60Rising: ma60Rising,
+        alignment,
+
+        ma20Rising,
+
+        ma60Rising,
 
         ma20To60Gap:
           Number(
@@ -1267,15 +1460,18 @@ module.exports = async function handler(req, res) {
             valueRatio.toFixed(2)
           ),
 
-        breakout20:
-          breakout20
+        breakout20
       },
 
       dataStatus: {
         krx: true,
+
         investorFlow: false,
+
         dart: false,
-        sectorRelativeStrength: false,
+
+        sectorRelativeStrength:
+          false,
 
         note:
           "현재는 KRX 가격·거래량·거래대금 기반 모델입니다. 이후 투자자 수급, DART, 섹터 상대강도를 추가할 예정입니다."
@@ -1290,12 +1486,11 @@ module.exports = async function handler(req, res) {
 
     return res.status(500).json({
       ok: false,
+
       error:
         String(
-          error &&
-          error.message
-            ? error.message
-            : error
+          error?.message ||
+          error
         )
     });
   }
