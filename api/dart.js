@@ -1,234 +1,204 @@
 module.exports = async function handler(req, res) {
   try {
-    const API_KEY = process.env.DART_API_KEY;
+    const apiKey = process.env.DART_API_KEY;
 
-    if (!API_KEY) {
+    if (!apiKey) {
       return res.status(500).json({
         ok: false,
         error: "DART_API_KEY 환경변수가 없습니다."
       });
     }
 
-    const stockCode = String(
-      req.query.code || "005930"
-    )
-      .trim()
-      .padStart(6, "0");
+    const code = String(req.query.code || "005930").trim();
 
-    // --------------------------------------------------
-    // HELPERS
-    // --------------------------------------------------
-
-    const num = (value) => {
-      if (
-        value === null ||
-        value === undefined ||
-        value === ""
-      ) {
-        return null;
-      }
-
-      const cleaned = String(value)
-        .replace(/,/g, "")
-        .trim();
-
-      const n = Number(cleaned);
-
-      return Number.isFinite(n) ? n : null;
+    const corpMap = {
+      "005930": "00126380"
     };
 
-    const fetchJson = async (url) => {
-      const response = await fetch(url);
-
-      const text = await response.text();
-
-      let data;
-
-      try {
-        data = JSON.parse(text);
-      } catch (error) {
-        throw new Error(
-          `DART JSON 파싱 실패: ${text.slice(0, 200)}`
-        );
-      }
-
-      return {
-        response,
-        data
-      };
-    };
-
-    // --------------------------------------------------
-    // 1. 기업 고유번호 찾기
-    //
-    // DART company.json은 corp_code가 필요하므로
-    // stock code -> corp code 매핑이 필요함.
-    //
-    // 우선 삼성전자 기본값을 지원하고
-    // corpCode 직접 입력도 허용.
-    // --------------------------------------------------
-
-    let corpCode = String(
-      req.query.corpCode || ""
-    ).trim();
-
-    // 삼성전자 기본 테스트
-    if (!corpCode && stockCode === "005930") {
-      corpCode = "00126380";
-    }
+    const corpCode =
+      String(req.query.corpCode || corpMap[code] || "").trim();
 
     if (!corpCode) {
       return res.status(400).json({
         ok: false,
-        error:
-          "현재 버전에서는 corpCode가 필요합니다.",
+        error: "corpCode가 필요합니다.",
         example:
-          "/api/dart?code=005930&corpCode=00126380",
-        stockCode
+          "/api/dart?code=005930&corpCode=00126380"
       });
     }
 
-    // --------------------------------------------------
-    // 2. 기업 개황
-    // --------------------------------------------------
+    // ==============================
+    // 기업 기본정보
+    // ==============================
 
     const companyUrl =
       "https://opendart.fss.or.kr/api/company.json" +
-      `?crtfc_key=${encodeURIComponent(API_KEY)}` +
-      `&corp_code=${encodeURIComponent(corpCode)}`;
+      "?crtfc_key=" +
+      encodeURIComponent(apiKey) +
+      "&corp_code=" +
+      encodeURIComponent(corpCode);
 
-    const companyResult =
-      await fetchJson(companyUrl);
+    const companyResponse = await fetch(companyUrl);
+    const company = await companyResponse.json();
 
-    const company =
-      companyResult.data;
-
-    if (
-      !companyResult.response.ok ||
-      company.status !== "000"
-    ) {
+    if (company.status !== "000") {
       return res.status(502).json({
         ok: false,
-        source: "DART",
         step: "company",
-        status: company.status || null,
-        message:
-          company.message ||
-          "기업정보 조회 실패"
+        status: company.status,
+        message: company.message
       });
     }
 
-    // --------------------------------------------------
-    // 3. 최근 주요 공시
-    // --------------------------------------------------
+    // ==============================
+    // 최근 6개월 공시
+    // ==============================
 
-    const now = new Date();
+    const today = new Date();
 
     const endDate =
-      `${now.getFullYear()}` +
-      `${String(now.getMonth() + 1).padStart(2, "0")}` +
-      `${String(now.getDate()).padStart(2, "0")}`;
+      today.getFullYear().toString() +
+      String(today.getMonth() + 1).padStart(2, "0") +
+      String(today.getDate()).padStart(2, "0");
 
-    const start = new Date(now);
+    const sixMonthsAgo = new Date(today);
 
-    start.setDate(
-      start.getDate() - 180
+    sixMonthsAgo.setMonth(
+      sixMonthsAgo.getMonth() - 6
     );
 
-    const startDate =
-      `${start.getFullYear()}` +
-      `${String(start.getMonth() + 1).padStart(2, "0")}` +
-      `${String(start.getDate()).padStart(2, "0")}`;
+    const beginDate =
+      sixMonthsAgo.getFullYear().toString() +
+      String(sixMonthsAgo.getMonth() + 1).padStart(2, "0") +
+      String(sixMonthsAgo.getDate()).padStart(2, "0");
 
-    const disclosureUrl =
+    const listUrl =
       "https://opendart.fss.or.kr/api/list.json" +
-      `?crtfc_key=${encodeURIComponent(API_KEY)}` +
-      `&corp_code=${encodeURIComponent(corpCode)}` +
-      `&bgn_de=${startDate}` +
-      `&end_de=${endDate}` +
+      "?crtfc_key=" +
+      encodeURIComponent(apiKey) +
+      "&corp_code=" +
+      encodeURIComponent(corpCode) +
+      "&bgn_de=" +
+      beginDate +
+      "&end_de=" +
+      endDate +
       "&page_count=20";
+
+    const listResponse = await fetch(listUrl);
+    const listData = await listResponse.json();
 
     let disclosures = [];
 
-    try {
-      const disclosureResult =
-        await fetchJson(disclosureUrl);
-
-      if (
-        disclosureResult.data.status === "000" &&
-        Array.isArray(
-          disclosureResult.data.list
-        )
-      ) {
-        disclosures =
-          disclosureResult.data.list.map(
-            (item) => ({
-              receiptNumber:
-                item.rcept_no || null,
-
-              reportName:
-                item.report_nm || null,
-
-              receiptDate:
-                item.rcept_dt || null,
-
-              corporationName:
-                item.corp_name || null,
-
-              submitter:
-                item.flr_nm || null,
-
-              remark:
-                item.rm || null
-            })
-          );
-      }
-    } catch (error) {
-      console.error(
-        "DART disclosure error:",
-        error
-      );
+    if (
+      listData.status === "000" &&
+      Array.isArray(listData.list)
+    ) {
+      disclosures = listData.list.map(function (item) {
+        return {
+          receiptNumber: item.rcept_no || null,
+          reportName: item.report_nm || null,
+          corporationName: item.corp_name || null,
+          submitter: item.flr_nm || null,
+          receiptDate: item.rcept_dt || null,
+          remark: item.rm || null
+        };
+      });
     }
 
-    // --------------------------------------------------
-    // 4. 재무제표
-    //
-    // 가장 최근 사업연도부터 시도
-    // --------------------------------------------------
+    // ==============================
+    // 공시 위험 신호
+    // ==============================
 
-    const currentYear =
-      now.getFullYear();
-
-    const yearsToTry = [
-      currentYear - 1,
-      currentYear - 2
+    const riskWords = [
+      "유상증자",
+      "전환사채",
+      "신주인수권",
+      "횡령",
+      "배임",
+      "소송",
+      "관리종목",
+      "상장폐지"
     ];
 
-    let financialYear = null;
-    let financialRaw = [];
+    const positiveWords = [
+      "단일판매",
+      "공급계약",
+      "자기주식취득",
+      "배당",
+      "신규시설투자"
+    ];
 
-    for (const year of yearsToTry) {
-      try {
-        const financialUrl =
-          "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json" +
-          `?crtfc_key=${encodeURIComponent(API_KEY)}` +
-          `&corp_code=${encodeURIComponent(corpCode)}` +
-          `&bsns_year=${year}` +
-          "&reprt_code=11011" +
-          "&fs_div=CFS";
+    const risks = [];
+    const positives = [];
 
-        const financialResult =
-          await fetchJson(financialUrl);
+    disclosures.forEach(function (item) {
+      const title = String(item.reportName || "");
 
-        if (
-          financialResult.data.status === "000" &&
-          Array.isArray(
-            financialResult.data.list
-          ) &&
-          financialResult.data.list.length > 0
-        ) {
-          financialYear = year;
-          financialRaw =
-            financialResult.data.list;
+      riskWords.forEach(function (word) {
+        if (title.indexOf(word) !== -1) {
+          risks.push(title);
+        }
+      });
 
-   
+      positiveWords.forEach(function (word) {
+        if (title.indexOf(word) !== -1) {
+          positives.push(title);
+        }
+      });
+    });
+
+    // ==============================
+    // 응답
+    // ==============================
+
+    res.setHeader(
+      "Cache-Control",
+      "public, s-maxage=1800, stale-while-revalidate=3600"
+    );
+
+    return res.status(200).json({
+      ok: true,
+
+      version: "DART_V2",
+
+      company: {
+        corpCode: company.corp_code,
+        corpName: company.corp_name,
+        corpNameEng: company.corp_name_eng,
+        stockCode: company.stock_code,
+        ceoName: company.ceo_nm,
+        corporationClass: company.corp_cls,
+        establishmentDate: company.est_dt,
+        fiscalMonth: company.acc_mt
+      },
+
+      disclosureAnalysis: {
+        total: disclosures.length,
+        riskCount: risks.length,
+        positiveCount: positives.length,
+        risks: risks.slice(0, 5),
+        positives: positives.slice(0, 5)
+      },
+
+      disclosures: disclosures.slice(0, 10),
+
+      dart: {
+        connected: true,
+        status: company.status,
+        message: company.message
+      }
+    });
+  } catch (error) {
+    console.error("DART ERROR", error);
+
+    return res.status(500).json({
+      ok: false,
+      version: "DART_V2",
+      error: String(
+        error && error.message
+          ? error.message
+          : error
+      )
+    });
+  }
+};
