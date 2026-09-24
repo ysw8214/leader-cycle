@@ -1,18 +1,14 @@
 /* =========================================================
-   LEADER CYCLE - SECTOR SCANNER V1
+   LEADER CYCLE - SECTOR SCANNER V1.1 DIAGNOSTIC
 
-   역할
+   목적
    ---------------------------------------------------------
-   1. market-snapshot에서 KOSPI + KOSDAQ 전체 종목 수집
-   2. sector-map.js로 종목 산업분류
-   3. 분류 커버리지 검사
-   4. 섹터별 시장 데이터 집계
-   5. 아직 coverage가 낮으면 랭킹 사용을 차단
+   1. market-snapshot 전체 종목 수신
+   2. 종목 validation 단계별 진단
+   3. sector-map 분류
+   4. 섹터별 집계
+   5. 어디서 데이터가 소실되는지 명확히 확인
 
-   IMPORTANT
-   ---------------------------------------------------------
-   sector-map이 충분히 채워지기 전까지는
-   실제 섹터 랭킹으로 사용하지 않는다.
 ========================================================= */
 
 const {
@@ -65,17 +61,14 @@ module.exports = async function handler(req, res) {
 
     function average(values) {
 
-      if (!Array.isArray(values)) {
+      if (!Array.isArray(values) || !values.length) {
         return 0;
       }
 
       const valid =
         values
           .map(num)
-          .filter(
-            value =>
-              Number.isFinite(value)
-          );
+          .filter(Number.isFinite);
 
       if (!valid.length) {
         return 0;
@@ -97,47 +90,56 @@ module.exports = async function handler(req, res) {
     ===================================================== */
 
     const protocol =
-      req.headers["x-forwarded-proto"] ||
-      "https";
+      String(
+        req.headers["x-forwarded-proto"] ||
+        "https"
+      )
+        .split(",")[0]
+        .trim();
 
     const host =
-      req.headers.host;
+      String(
+        req.headers["x-forwarded-host"] ||
+        req.headers.host ||
+        ""
+      )
+        .split(",")[0]
+        .trim();
+
 
     if (!host) {
 
       return res.status(500).json({
         ok: false,
-        error:
-          "host 정보를 확인할 수 없습니다."
+        version: "SECTOR_SCAN_V1_1_DIAGNOSTIC",
+        error: "host 정보를 확인할 수 없습니다."
       });
     }
+
 
     const baseUrl =
       `${protocol}://${host}`;
 
 
     /* =====================================================
-       DATE
+       REQUESTED DATE
     ===================================================== */
 
     const requestedDate =
       String(
         req.query.date || ""
-      ).trim();
+      )
+        .replace(/-/g, "")
+        .trim();
 
 
     /* =====================================================
-       MARKET SNAPSHOT
-
-       date를 지정하지 않으면 market-snapshot이
-       현재 날짜를 사용한다.
-
-       주말/휴일 fallback은 이후 scanner 최종버전에서
-       추가한다.
+       MARKET SNAPSHOT URL
     ===================================================== */
 
     let snapshotUrl =
       `${baseUrl}/api/market-snapshot`;
+
 
     if (/^\d{8}$/.test(requestedDate)) {
 
@@ -148,22 +150,37 @@ module.exports = async function handler(req, res) {
     }
 
 
+    /* =====================================================
+       FETCH MARKET SNAPSHOT
+    ===================================================== */
+
     let response;
 
     try {
 
       response =
         await fetch(
-          snapshotUrl
+          snapshotUrl,
+          {
+            headers: {
+              Accept: "application/json"
+            }
+          }
         );
 
     } catch (error) {
 
       return res.status(502).json({
+
         ok: false,
+
+        version:
+          "SECTOR_SCAN_V1_1_DIAGNOSTIC",
 
         error:
           "market-snapshot 호출 실패",
+
+        snapshotUrl,
 
         detail:
           String(
@@ -181,95 +198,304 @@ module.exports = async function handler(req, res) {
       snapshot =
         await response.json();
 
-    } catch {
+    } catch (error) {
 
       return res.status(502).json({
+
         ok: false,
+
+        version:
+          "SECTOR_SCAN_V1_1_DIAGNOSTIC",
+
         error:
-          "market-snapshot 응답 JSON 파싱 실패"
+          "market-snapshot JSON 파싱 실패",
+
+        snapshotHttpStatus:
+          response.status,
+
+        snapshotUrl
       });
     }
 
+
+    /* =====================================================
+       SNAPSHOT VALIDATION
+    ===================================================== */
 
     if (
       !response.ok ||
       !snapshot ||
-      !snapshot.ok ||
-      !Array.isArray(
-        snapshot.stocks
-      )
+      snapshot.ok !== true
     ) {
 
       return res.status(502).json({
+
         ok: false,
 
-        error:
-          "market-snapshot 데이터 조회 실패",
+        version:
+          "SECTOR_SCAN_V1_1_DIAGNOSTIC",
 
-        detail:
-          snapshot
+        error:
+          "market-snapshot 응답 실패",
+
+        snapshotHttpStatus:
+          response.status,
+
+        snapshotUrl,
+
+        snapshot:
+          snapshot || null
+      });
+    }
+
+
+    const rawStocks =
+      Array.isArray(
+        snapshot.stocks
+      )
+        ? snapshot.stocks
+        : [];
+
+
+    /* =====================================================
+       DIAGNOSTIC PIPELINE
+
+       중요:
+       각 단계의 종목수를 따로 계산한다.
+    ===================================================== */
+
+    const validCodeStocks =
+      rawStocks.filter(
+        stock =>
+          /^\d{6}$/.test(
+            String(
+              stock?.code || ""
+            ).trim()
+          )
+      );
+
+
+    const validNameStocks =
+      validCodeStocks.filter(
+        stock =>
+          String(
+            stock?.name || ""
+          ).trim().length > 0
+      );
+
+
+    const validPriceStocks =
+      validNameStocks.filter(
+        stock =>
+          num(
+            stock?.close
+          ) > 0
+      );
+
+
+    /* =====================================================
+       NORMALIZE
+
+       validation 후 실제 scanner가 사용할 데이터
+    ===================================================== */
+
+    const stocks =
+      validPriceStocks.map(
+        stock => ({
+
+          ...stock,
+
+          code:
+            String(
+              stock.code || ""
+            ).trim(),
+
+          name:
+            String(
+              stock.name || ""
+            ).trim(),
+
+          market:
+            String(
+              stock.market || ""
+            ).trim(),
+
+          close:
+            num(
+              stock.close
+            ),
+
+          open:
+            num(
+              stock.open
+            ),
+
+          high:
+            num(
+              stock.high
+            ),
+
+          low:
+            num(
+              stock.low
+            ),
+
+          changeRate:
+            num(
+              stock.changeRate
+            ),
+
+          volume:
+            num(
+              stock.volume
+            ),
+
+          tradingValue:
+            num(
+              stock.tradingValue
+            ),
+
+          marketCap:
+            num(
+              stock.marketCap
+            )
+        })
+      );
+
+
+    /* =====================================================
+       DIAGNOSTICS
+    ===================================================== */
+
+    const diagnostics = {
+
+      snapshotVersion:
+        snapshot.version ||
+        null,
+
+      snapshotDate:
+        snapshot.date ||
+        null,
+
+      requestedDate:
+        snapshot.requestedDate ||
+        requestedDate ||
+        null,
+
+      fallbackUsed:
+        Boolean(
+          snapshot.fallbackUsed
+        ),
+
+      snapshotStocks:
+        rawStocks.length,
+
+      validCodeStocks:
+        validCodeStocks.length,
+
+      validNameStocks:
+        validNameStocks.length,
+
+      validPriceStocks:
+        validPriceStocks.length,
+
+      finalStocks:
+        stocks.length,
+
+      snapshotMarketCount:
+        snapshot.marketCount ||
+        null,
+
+      sampleRaw:
+        rawStocks
+          .slice(0, 3)
+          .map(
+            stock => ({
+              code:
+                stock?.code,
+
+              name:
+                stock?.name,
+
+              close:
+                stock?.close,
+
+              market:
+                stock?.market
+            })
+          ),
+
+      sampleFinal:
+        stocks
+          .slice(0, 3)
+          .map(
+            stock => ({
+              code:
+                stock.code,
+
+              name:
+                stock.name,
+
+              close:
+                stock.close,
+
+              market:
+                stock.market
+            })
+          )
+    };
+
+
+    /* =====================================================
+       SAFETY CHECK
+
+       snapshot이 0이면 섹터 계산 자체를 하지 않는다.
+    ===================================================== */
+
+    if (!rawStocks.length) {
+
+      return res.status(502).json({
+
+        ok: false,
+
+        version:
+          "SECTOR_SCAN_V1_1_DIAGNOSTIC",
+
+        error:
+          "market-snapshot에서 stocks가 0개 반환되었습니다.",
+
+        diagnostics,
+
+        elapsedMs:
+          Date.now() -
+          startedAt
+      });
+    }
+
+
+    if (!stocks.length) {
+
+      return res.status(500).json({
+
+        ok: false,
+
+        version:
+          "SECTOR_SCAN_V1_1_DIAGNOSTIC",
+
+        error:
+          "종목 validation 이후 stocks가 0개가 되었습니다.",
+
+        diagnostics,
+
+        elapsedMs:
+          Date.now() -
+          startedAt
       });
     }
 
 
     /* =====================================================
-       VALID STOCKS
-    ===================================================== */
-
-    const stocks =
-      snapshot.stocks
-        .map(
-          stock => ({
-            ...stock,
-
-            code:
-              String(
-                stock.code || ""
-              ).trim(),
-
-            name:
-              String(
-                stock.name || ""
-              ).trim(),
-
-            close:
-              num(
-                stock.close
-              ),
-
-            changeRate:
-              num(
-                stock.changeRate
-              ),
-
-            volume:
-              num(
-                stock.volume
-              ),
-
-            tradingValue:
-              num(
-                stock.tradingValue
-              ),
-
-            marketCap:
-              num(
-                stock.marketCap
-              )
-          })
-        )
-        .filter(
-          stock =>
-            /^\d{6}$/.test(
-              stock.code
-            ) &&
-            stock.name &&
-            stock.close > 0
-        );
-
-
-    /* =====================================================
-       CLASSIFICATION COVERAGE
+       CLASSIFICATION
     ===================================================== */
 
     const classification =
@@ -283,13 +509,6 @@ module.exports = async function handler(req, res) {
         stocks
       );
 
-
-    /*
-      현재는 sector-map이 완성되기 전이므로
-      90% 미만이면 productionReady = false
-
-      최종적으로는 95% 이상을 목표.
-    */
 
     const MINIMUM_COVERAGE =
       90;
@@ -326,10 +545,6 @@ module.exports = async function handler(req, res) {
       )
     ) {
 
-      /*
-        UNKNOWN은 실제 랭킹에서 제외
-      */
-
       if (
         sectorId ===
         "UNKNOWN"
@@ -340,7 +555,7 @@ module.exports = async function handler(req, res) {
 
       const sectorStocks =
         Array.isArray(
-          group.stocks
+          group?.stocks
         )
           ? group.stocks
           : [];
@@ -350,10 +565,6 @@ module.exports = async function handler(req, res) {
         continue;
       }
 
-
-      /* -------------------------------------------------
-         상승 / 하락 종목
-      ------------------------------------------------- */
 
       const risingStocks =
         sectorStocks.filter(
@@ -383,17 +594,11 @@ module.exports = async function handler(req, res) {
 
 
       const advanceRatio =
-        sectorStocks.length > 0
-          ? (
-              risingStocks.length /
-              sectorStocks.length
-            ) * 100
-          : 0;
+        (
+          risingStocks.length /
+          sectorStocks.length
+        ) * 100;
 
-
-      /* -------------------------------------------------
-         평균 상승률
-      ------------------------------------------------- */
 
       const averageChangeRate =
         average(
@@ -403,10 +608,6 @@ module.exports = async function handler(req, res) {
           )
         );
 
-
-      /* -------------------------------------------------
-         섹터 전체 거래대금
-      ------------------------------------------------- */
 
       const totalTradingValue =
         sectorStocks.reduce(
@@ -419,10 +620,6 @@ module.exports = async function handler(req, res) {
         );
 
 
-      /* -------------------------------------------------
-         섹터 전체 시총
-      ------------------------------------------------- */
-
       const totalMarketCap =
         sectorStocks.reduce(
           (sum, stock) =>
@@ -434,15 +631,9 @@ module.exports = async function handler(req, res) {
         );
 
 
-      /* -------------------------------------------------
-         거래대금 기준 내부 주도종목
-
-         현재는 당일 데이터만 있으므로
-         단순 거래대금 순위.
-
-         이후 historical sector scan에서
-         거래대금 증가율까지 추가한다.
-      ------------------------------------------------- */
+      /* ===================================================
+         SECTOR LEADERS
+      =================================================== */
 
       const leaders =
         [...sectorStocks]
@@ -461,6 +652,7 @@ module.exports = async function handler(req, res) {
           )
           .map(
             stock => ({
+
               code:
                 stock.code,
 
@@ -471,24 +663,16 @@ module.exports = async function handler(req, res) {
                 stock.market,
 
               close:
-                num(
-                  stock.close
-                ),
+                stock.close,
 
               changeRate:
-                num(
-                  stock.changeRate
-                ),
+                stock.changeRate,
 
               tradingValue:
-                num(
-                  stock.tradingValue
-                ),
+                stock.tradingValue,
 
               marketCap:
-                num(
-                  stock.marketCap
-                )
+                stock.marketCap
             })
           );
 
@@ -515,16 +699,12 @@ module.exports = async function handler(req, res) {
 
         advanceRatio:
           Number(
-            advanceRatio.toFixed(
-              2
-            )
+            advanceRatio.toFixed(2)
           ),
 
         averageChangeRate:
           Number(
-            averageChangeRate.toFixed(
-              2
-            )
+            averageChangeRate.toFixed(2)
           ),
 
         tradingValue:
@@ -539,10 +719,7 @@ module.exports = async function handler(req, res) {
 
 
     /* =====================================================
-       시장 거래대금 계산
-
-       각 섹터가 전체 시장 거래대금에서
-       차지하는 비율을 계산한다.
+       MARKET TRADING VALUE
     ===================================================== */
 
     const marketTradingValue =
@@ -557,19 +734,10 @@ module.exports = async function handler(req, res) {
 
 
     /* =====================================================
-       TEMPORARY SECTOR SCORE
+       TEMPORARY SCORE
 
-       아직 historical 데이터가 없으므로
-       "최종 HAN / EARLY SCORE"가 아니다.
-
-       현재 목적:
-       sector-map 검증 + 기본 데이터 파이프라인 확인
-
-       구성
-       -------------------------------------------------
-       상승종목 비율    40
-       평균 상승률      30
-       시장 거래대금비중 30
+       검증용 점수.
+       최종 HAN/EARLY 점수가 아님.
     ===================================================== */
 
     for (
@@ -586,11 +754,6 @@ module.exports = async function handler(req, res) {
           40
         );
 
-
-      /*
-        평균 +5% 이상이면
-        가격강도 최대점수
-      */
 
       const priceScore =
         clamp(
@@ -612,11 +775,6 @@ module.exports = async function handler(req, res) {
           : 0;
 
 
-      /*
-        시장 거래대금의 10%면
-        최대 30점
-      */
-
       const liquidityScore =
         clamp(
           (
@@ -630,9 +788,7 @@ module.exports = async function handler(req, res) {
 
       sector.tradingShare =
         Number(
-          tradingShare.toFixed(
-            2
-          )
+          tradingShare.toFixed(2)
         );
 
 
@@ -647,8 +803,6 @@ module.exports = async function handler(req, res) {
 
     /* =====================================================
        SORT
-
-       현재는 임시점수 기준
     ===================================================== */
 
     sectors.sort(
@@ -660,11 +814,13 @@ module.exports = async function handler(req, res) {
 
     /* =====================================================
        CACHE
+
+       진단 중이므로 cache 끔.
     ===================================================== */
 
     res.setHeader(
       "Cache-Control",
-      "public, s-maxage=1800, stale-while-revalidate=3600"
+      "no-store"
     );
 
 
@@ -677,12 +833,29 @@ module.exports = async function handler(req, res) {
       ok: true,
 
       version:
-        "SECTOR_SCAN_V1_VALIDATION",
+        "SECTOR_SCAN_V1_1_DIAGNOSTIC",
 
       date:
         snapshot.date ||
+        null,
+
+      requestedDate:
+        snapshot.requestedDate ||
         requestedDate ||
         null,
+
+      fallbackUsed:
+        Boolean(
+          snapshot.fallbackUsed
+        ),
+
+
+      /*
+        여기부터 먼저 확인하면 됨.
+      */
+
+      diagnostics,
+
 
       productionReady,
 
@@ -714,11 +887,6 @@ module.exports = async function handler(req, res) {
       },
 
 
-      /*
-        미분류 전체를 반환하면 응답이 너무 커지므로
-        앞 100개만 보여준다.
-      */
-
       unclassified: {
 
         count:
@@ -728,10 +896,11 @@ module.exports = async function handler(req, res) {
           unclassified
             .slice(
               0,
-              100
+              50
             )
             .map(
               stock => ({
+
                 code:
                   stock.code,
 
@@ -744,13 +913,6 @@ module.exports = async function handler(req, res) {
             )
       },
 
-
-      /*
-        productionReady가 false여도
-        디버깅을 위해 계산 결과는 보여준다.
-
-        단 사이트에는 아직 연결하지 않는다.
-      */
 
       sectors:
         sectors.slice(
@@ -787,7 +949,7 @@ module.exports = async function handler(req, res) {
       ok: false,
 
       version:
-        "SECTOR_SCAN_V1_VALIDATION",
+        "SECTOR_SCAN_V1_1_DIAGNOSTIC",
 
       elapsedMs:
         Date.now() -
