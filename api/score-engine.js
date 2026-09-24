@@ -584,3 +584,417 @@ export default async function handler(req, res) {
 
     // 단기 추세 붕괴
     if (close < ma5) {
+      exhaustionTrend += 8;
+      exhaustionReasons.push(
+        "현재가 MA5 이탈"
+      );
+    }
+
+    if (close < ma20) {
+      exhaustionTrend += 17;
+      exhaustionReasons.push(
+        "현재가 MA20 이탈"
+      );
+    }
+
+    if (
+      ma5 < ma20 &&
+      return60 > 15
+    ) {
+      exhaustionTrend += 10;
+      exhaustionReasons.push(
+        "강한 상승 이후 MA5/MA20 약화"
+      );
+    }
+
+    let exhaustionScore =
+      exhaustionMomentum +
+      exhaustionExtension +
+      exhaustionActivity +
+      exhaustionTrend;
+
+    exhaustionScore = clamp(
+      Math.round(exhaustionScore),
+      0,
+      100
+    );
+
+    /* ==========================================
+       4. ENTRY SCORE
+       "지금 신규 진입 위치가 좋은가?"
+    ========================================== */
+
+    let entryTrend = 0;
+    let entryPosition = 0;
+    let entryMomentum = 0;
+    let entryActivity = 0;
+
+    const entryReasons = [];
+    const entryWarnings = [];
+
+    // 추세 품질 30
+    if (close > ma20) entryTrend += 6;
+    if (close > ma60) entryTrend += 6;
+    if (ma5 > ma20) entryTrend += 6;
+    if (ma20Rising) entryTrend += 6;
+    if (ma60Rising) entryTrend += 6;
+
+    if (entryTrend >= 24) {
+      entryReasons.push(
+        "주요 추세 조건 양호"
+      );
+    }
+
+    // 진입 위치 30
+    if (
+      distance20 >= 0 &&
+      distance20 <= 4
+    ) {
+      entryPosition += 18;
+      entryReasons.push(
+        "MA20 대비 이격 부담 낮음"
+      );
+    } else if (
+      distance20 > 4 &&
+      distance20 <= 8
+    ) {
+      entryPosition += 13;
+    } else if (
+      distance20 > 8 &&
+      distance20 <= 12
+    ) {
+      entryPosition += 7;
+    } else if (distance20 > 15) {
+      entryWarnings.push(
+        "MA20 대비 이격 부담"
+      );
+    }
+
+    if (
+      ma20To60Gap >= -2 &&
+      ma20To60Gap <= 5
+    ) {
+      entryPosition += 7;
+      entryReasons.push(
+        "MA20/MA60 전환 초기 구간"
+      );
+    }
+
+    if (
+      distanceFromHigh20 >= -5 &&
+      distanceFromHigh20 <= 2
+    ) {
+      entryPosition += 5;
+    }
+
+    // 모멘텀 20
+    if (
+      return5 > 0 &&
+      return5 <= 8
+    ) {
+      entryMomentum += 7;
+    }
+
+    if (
+      return10 > 0 &&
+      return10 <= 15
+    ) {
+      entryMomentum += 6;
+    }
+
+    if (
+      return20 > 2 &&
+      return20 <= 25
+    ) {
+      entryMomentum += 7;
+    }
+
+    // 거래대금 20
+    if (valueRatio >= 2) {
+      entryActivity += 12;
+      entryReasons.push(
+        "거래대금 강한 유입"
+      );
+    } else if (valueRatio >= 1.5) {
+      entryActivity += 10;
+    } else if (valueRatio >= 1.2) {
+      entryActivity += 7;
+    } else if (valueRatio >= 1) {
+      entryActivity += 4;
+    }
+
+    if (volumeRatio >= 1.5) {
+      entryActivity += 8;
+    } else if (volumeRatio >= 1.2) {
+      entryActivity += 5;
+    } else if (volumeRatio >= 1) {
+      entryActivity += 3;
+    }
+
+    /*
+      공세 소멸을 ENTRY에 직접 반영
+
+      0~24   감점 없음
+      25~49  일부 감점
+      50~74  큰 감점
+      75+    신규 진입 BLOCK
+    */
+
+    let exhaustionPenalty = 0;
+
+    if (exhaustionScore >= 75) {
+      exhaustionPenalty = 50;
+      entryWarnings.push(
+        "공세 소멸 위험이 매우 높음"
+      );
+    } else if (exhaustionScore >= 50) {
+      exhaustionPenalty = 25;
+      entryWarnings.push(
+        "공세 소멸 위험 상승"
+      );
+    } else if (exhaustionScore >= 25) {
+      exhaustionPenalty = 10;
+    }
+
+    // 별도 추격매수 감점
+    let chasePenalty = 0;
+
+    if (return5 >= 15) {
+      chasePenalty += 8;
+      entryWarnings.push(
+        "최근 5거래일 급등"
+      );
+    }
+
+    if (distance20 >= 15) {
+      chasePenalty += 10;
+      entryWarnings.push(
+        "MA20 과이격"
+      );
+    }
+
+    let entryScore =
+      entryTrend +
+      entryPosition +
+      entryMomentum +
+      entryActivity -
+      exhaustionPenalty -
+      chasePenalty;
+
+    entryScore = clamp(
+      Math.round(entryScore),
+      0,
+      100
+    );
+
+    /* ==========================================
+       사이클 STAGE
+    ========================================== */
+
+    let stage = "DISCOVERY";
+
+    if (
+      exhaustionScore >= 75
+    ) {
+      stage = "EXHAUSTING";
+    }
+    else if (
+      close < ma20 &&
+      ma5 < ma20
+    ) {
+      stage = "BROKEN";
+    }
+    else if (
+      leaderScore >= 80 &&
+      alignment
+    ) {
+      stage = "LEADER";
+    }
+    else if (
+      leaderScore >= 70 &&
+      exhaustionScore >= 40
+    ) {
+      stage = "MATURE";
+    }
+    else if (
+      earlyScore >= 70
+    ) {
+      stage = "EMERGING";
+    }
+    else if (
+      leaderScore >= 60
+    ) {
+      stage = "WATCH";
+    }
+
+    /* ==========================================
+       신규 진입 상태
+    ========================================== */
+
+    let entryStatus = "WAIT";
+
+    if (exhaustionScore >= 75) {
+      entryStatus = "BLOCKED";
+    }
+    else if (entryScore >= 80) {
+      entryStatus = "ATTRACTIVE";
+    }
+    else if (entryScore >= 65) {
+      entryStatus = "WATCH";
+    }
+    else if (entryScore >= 50) {
+      entryStatus = "NEUTRAL";
+    }
+    else {
+      entryStatus = "AVOID";
+    }
+
+    /* ==========================================
+       RESPONSE
+    ========================================== */
+
+    return res.status(200).json({
+      ok: true,
+
+      code,
+      name: history.name,
+      date: history.latestDate,
+
+      price: close,
+
+      stage,
+
+      scores: {
+        leader: leaderScore,
+        early: earlyScore,
+        entry: entryScore,
+        exhaustion: exhaustionScore
+      },
+
+      entryStatus,
+
+      blocked:
+        exhaustionScore >= 75,
+
+      scoreDetail: {
+
+        leader: {
+          score: leaderScore,
+
+          components: {
+            trend: leaderTrend,
+            alignment: leaderAlignment,
+            momentum: leaderMomentum,
+            activity: leaderActivity,
+            persistence: leaderPersistence
+          },
+
+          reasons: leaderReasons,
+          warnings: leaderWarnings
+        },
+
+        early: {
+          score: earlyScore,
+
+          components: {
+            transition: earlyTransition,
+            momentum: earlyMomentum,
+            activity: earlyActivity,
+            position: earlyPosition,
+            penalty: -earlyPenalty
+          },
+
+          reasons: earlyReasons,
+          warnings: earlyWarnings
+        },
+
+        entry: {
+          score: entryScore,
+
+          components: {
+            trend: entryTrend,
+            position: entryPosition,
+            momentum: entryMomentum,
+            activity: entryActivity,
+            exhaustionPenalty: -exhaustionPenalty,
+            chasePenalty: -chasePenalty
+          },
+
+          reasons: entryReasons,
+          warnings: entryWarnings
+        },
+
+        exhaustion: {
+          score: exhaustionScore,
+
+          components: {
+            momentumDecay: exhaustionMomentum,
+            extension: exhaustionExtension,
+            activity: exhaustionActivity,
+            trendBreak: exhaustionTrend
+          },
+
+          reasons: exhaustionReasons
+        }
+      },
+
+      signals: {
+
+        alignment,
+        ma20Rising,
+        ma60Rising,
+
+        ma20To60Gap:
+          Number(ma20To60Gap.toFixed(2)),
+
+        distance20:
+          Number(distance20.toFixed(2)),
+
+        distance60:
+          Number(distance60.toFixed(2)),
+
+        return5:
+          Number(return5.toFixed(2)),
+
+        return10:
+          Number(return10.toFixed(2)),
+
+        return20:
+          Number(return20.toFixed(2)),
+
+        return60:
+          Number(return60.toFixed(2)),
+
+        volumeRatio:
+          Number(volumeRatio.toFixed(2)),
+
+        tradingValueRatio:
+          Number(valueRatio.toFixed(2)),
+
+        breakout20
+      },
+
+      dataStatus: {
+        krx: true,
+
+        // 다음 단계에서 연결
+        investorFlow: false,
+        dart: false,
+        sectorRelativeStrength: false,
+
+        note:
+          "현재 점수는 KRX 가격·거래량·거래대금 기반 1차 모델입니다. DART/수급/섹터 상대강도 연결 후 최종 모델로 확장됩니다."
+      }
+    });
+
+  } catch (error) {
+
+    console.error(error);
+
+    return res.status(500).json({
+      ok: false,
+      error: error.message
+    });
+
+  }
+}
