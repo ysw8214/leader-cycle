@@ -1,92 +1,142 @@
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   try {
-    const apiKey = process.env.KRX_API_KEY;
+    const days = Math.min(
+      Math.max(parseInt(req.query.days || "5", 10), 1),
+      10
+    );
 
-    if (!apiKey) {
+    // 이미 정상 작동 확인된 history API 호출
+    const protocol =
+      req.headers["x-forwarded-proto"] || "https";
+
+    const host = req.headers.host;
+
+    const historyUrl =
+      `${protocol}://${host}/api/history?days=${days}`;
+
+    const response = await fetch(historyUrl);
+
+    if (!response.ok) {
+      const text = await response.text();
+
       return res.status(500).json({
         ok: false,
-        error: "KRX_API_KEY가 설정되지 않았습니다.",
+        step: "history_fetch",
+        status: response.status,
+        detail: text
       });
     }
 
-    // 테스트 시 ?days=5
-    // 최종적으로 ?days=20
-    const requestedDays = Math.min(
-      Math.max(parseInt(req.query.days || "5", 10), 3),
-      20
-    );
+    const history = await response.json();
 
-    const num = (value) => {
-      const n = Number(String(value ?? "").replace(/,/g, ""));
-      return Number.isFinite(n) ? n : 0;
-    };
-
-    const avg = (arr) => {
-      if (!arr.length) return 0;
-      return arr.reduce((a, b) => a + b, 0) / arr.length;
-    };
-
-    // ─────────────────────────────
-    // 한국시간 기준 날짜 후보 생성
-    // ─────────────────────────────
-
-    const now = new Date();
-
-    const kstNow = new Date(
-      now.toLocaleString("en-US", {
-        timeZone: "Asia/Seoul",
-      })
-    );
-
-    const candidateDates = [];
-
-    // 20거래일 확보를 위해 넉넉히 35일 탐색
-    for (let i = 0; i < 35; i++) {
-      const target = new Date(kstNow);
-
-      target.setDate(kstNow.getDate() - i);
-
-      const day = target.getDay();
-
-      // 토/일 제외
-      if (day === 0 || day === 6) {
-        continue;
-      }
-
-      const yyyy = target.getFullYear();
-      const mm = String(target.getMonth() + 1).padStart(2, "0");
-      const dd = String(target.getDate()).padStart(2, "0");
-
-      candidateDates.push(`${yyyy}${mm}${dd}`);
+    if (!history.ok || !Array.isArray(history.history)) {
+      return res.status(500).json({
+        ok: false,
+        step: "history_parse",
+        received: history
+      });
     }
 
-    // ─────────────────────────────
-    // KRX 직접 호출 함수
-    // ─────────────────────────────
+    // 종목별 데이터 정리
+    const stocks = {};
 
-    async function fetchKRX(date) {
-      try {
-        const url =
-          "https://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd";
+    history.history.forEach((day) => {
+      if (!Array.isArray(day.data)) return;
 
-        // 지금 정상 작동 중인 krx.js와 동일하게 GET 방식
-        const response = await fetch(
-          `${url}?basDd=${date}`,
-          {
-            method: "GET",
-            headers: {
-              AUTH_KEY: apiKey,
-            },
-          }
-        );
+      day.data.forEach((stock) => {
+        const code = stock.ISU_CD;
+        if (!code) return;
 
-        if (!response.ok) {
-          return null;
+        if (!stocks[code]) {
+          stocks[code] = {
+            code,
+            name: stock.ISU_NM,
+            market: stock.MKT_NM,
+            records: []
+          };
         }
 
-        const json = await response.json();
+        stocks[code].records.push({
+          date: stock.BAS_DD,
+          close: Number(stock.TDD_CLSPRC || 0),
+          changeRate: Number(stock.FLUC_RT || 0),
+          volume: Number(stock.ACC_TRDVOL || 0),
+          value: Number(stock.ACC_TRDVAL || 0),
+          marketCap: Number(stock.MKTCAP || 0)
+        });
+      });
+    });
 
-        const rows = json?.OutBlock_1;
+    // 간단한 Leader Cycle 점수 계산
+    const result = Object.values(stocks)
+      .map((stock) => {
+        const records = stock.records;
 
-        if (!Array.isArray(rows) || rows.length === 0) {
-         
+        if (!records.length) return null;
+
+        const latest = records[0];
+
+        const avgValue =
+          records.reduce((sum, r) => sum + r.value, 0) /
+          records.length;
+
+        const avgVolume =
+          records.reduce((sum, r) => sum + r.volume, 0) /
+          records.length;
+
+        const valueRatio =
+          avgValue > 0
+            ? latest.value / avgValue
+            : 0;
+
+        const volumeRatio =
+          avgVolume > 0
+            ? latest.volume / avgVolume
+            : 0;
+
+        const momentum = latest.changeRate;
+
+        // 임시 Leader Cycle 점수
+        const score =
+          momentum * 10 +
+          Math.min(valueRatio, 5) * 10 +
+          Math.min(volumeRatio, 5) * 5;
+
+        return {
+          code: stock.code,
+          name: stock.name,
+          market: stock.market,
+          close: latest.close,
+          changeRate: latest.changeRate,
+          tradingValue: latest.value,
+          volume: latest.volume,
+          marketCap: latest.marketCap,
+          valueRatio: Number(valueRatio.toFixed(2)),
+          volumeRatio: Number(volumeRatio.toFixed(2)),
+          score: Number(score.toFixed(2))
+        };
+      })
+      .filter(Boolean)
+      .filter((stock) => stock.tradingValue > 0)
+      .sort((a, b) => b.score - a.score);
+
+    const leaders = result.slice(0, 20);
+
+    return res.status(200).json({
+      ok: true,
+      days,
+      latestDate: history.latestDate,
+      stockCount: result.length,
+      leaders
+    });
+
+  } catch (error) {
+    console.error("SCANNER ERROR:", error);
+
+    return res.status(500).json({
+      ok: false,
+      error: String(error),
+      stack: error?.stack || null
+    });
+  }
+};
