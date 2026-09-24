@@ -12,7 +12,7 @@ export default async function handler(req, res) {
     const date = req.query.date || "20200414";
 
     const url =
-      `https://data-dbg.krx.co.kr/svc/sample/apis/sto/stk_bydd_trd?basDd=${date}`;
+      `https://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd?basDd=${date}`;
 
     const response = await fetch(url, {
       method: "GET",
@@ -21,12 +21,25 @@ export default async function handler(req, res) {
       }
     });
 
-    const data = await response.json();
+    const text = await response.text();
+
+    let data;
+
+    try {
+      data = JSON.parse(text);
+    } catch {
+      return res.status(500).json({
+        ok: false,
+        status: response.status,
+        error: "KRX 응답 파싱 실패",
+        raw: text
+      });
+    }
 
     return res.status(200).json({
-      ok: true,
+      ok: response.ok,
       status: response.status,
-      date: date,
+      date,
       raw: data
     });
 
