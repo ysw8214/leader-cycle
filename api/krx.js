@@ -5,21 +5,21 @@ export default async function handler(req, res) {
     if (!apiKey) {
       return res.status(500).json({
         ok: false,
-        error: "KRX_API_KEY가 설정되지 않았습니다."
+        error: "KRX_API_KEY 환경변수가 없습니다."
       });
     }
 
-    // 주소에 ?date=20200414 처럼 넣으면 해당 날짜 조회
     const date = req.query.date || "20200414";
 
-    // KRX 명세에 나온 실제 API 주소
+    // KRX 명세의 샘플 호출 경로
     const url =
-      `https://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd?basDd=${date}`;
+      `https://data-dbg.krx.co.kr/svc/sample/apis/sto/stk_bydd_trd?basDd=${date}`;
 
     const response = await fetch(url, {
       method: "GET",
       headers: {
-        AUTH_KEY: apiKey
+        "AUTH_KEY": apiKey,
+        "Accept": "application/json"
       }
     });
 
@@ -29,12 +29,12 @@ export default async function handler(req, res) {
 
     try {
       data = JSON.parse(text);
-    } catch {
+    } catch (e) {
       return res.status(500).json({
         ok: false,
-        error: "KRX 응답을 JSON으로 변환하지 못했습니다.",
         status: response.status,
-        raw: text
+        error: "KRX 응답이 JSON이 아닙니다.",
+        response: text
       });
     }
 
@@ -42,7 +42,9 @@ export default async function handler(req, res) {
       ok: response.ok,
       status: response.status,
       date: date,
-      count: data.OutBlock_1?.length || 0,
+      count: Array.isArray(data.OutBlock_1)
+        ? data.OutBlock_1.length
+        : 0,
       data: data.OutBlock_1 || [],
       raw: data
     });
