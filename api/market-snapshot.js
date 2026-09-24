@@ -9,7 +9,6 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    // YYYYMMDD 형식
     const date = String(req.query.date || "").trim();
 
     if (!/^\d{8}$/.test(date)) {
@@ -20,95 +19,124 @@ module.exports = async function handler(req, res) {
     }
 
     /*
-      하루가 지난 과거 시장 데이터는 변하지 않으므로
-      Vercel CDN에서 오래 캐시해도 됨.
+      KRX 시장 구분
 
-      동일 날짜를 여러 종목이 요청해도
-      KRX를 계속 다시 호출하지 않도록 하는 핵심.
+      KOSPI
+      /sto/stk_bydd_trd
+
+      KOSDAQ
+      /sto/ksq_bydd_trd
+
+      두 시장을 동시에 받아 합친다.
     */
-    res.setHeader(
-      "Cache-Control",
-      "public, s-maxage=86400, stale-while-revalidate=604800"
-    );
 
-    const url =
-      `https://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd?basDd=${date}`;
-
-    const response = await fetch(url, {
-      method: "GET",
-      headers: {
-        AUTH_KEY: apiKey
+    const markets = [
+      {
+        market: "KOSPI",
+        url:
+          `https://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd?basDd=${date}`
+      },
+      {
+        market: "KOSDAQ",
+        url:
+          `https://data-dbg.krx.co.kr/svc/apis/sto/ksq_bydd_trd?basDd=${date}`
       }
-    });
+    ];
 
-    if (!response.ok) {
-      return res.status(response.status).json({
-        ok: false,
-        error: "KRX 조회 실패",
-        status: response.status,
-        date
-      });
+    async function fetchMarket(info) {
+      try {
+        const response = await fetch(info.url, {
+          method: "GET",
+          headers: {
+            AUTH_KEY: apiKey
+          }
+        });
+
+        if (!response.ok) {
+          return {
+            market: info.market,
+            ok: false,
+            status: response.status,
+            rows: []
+          };
+        }
+
+        const json = await response.json();
+
+        const rows = Array.isArray(json.OutBlock_1)
+          ? json.OutBlock_1
+          : [];
+
+        return {
+          market: info.market,
+          ok: true,
+          status: response.status,
+          rows
+        };
+
+      } catch (error) {
+        return {
+          market: info.market,
+          ok: false,
+          error: String(error?.message || error),
+          rows: []
+        };
+      }
     }
 
-    const json = await response.json();
-
-    const rows = Array.isArray(json.OutBlock_1)
-      ? json.OutBlock_1
-      : [];
-
     /*
-      필요한 데이터만 남겨서
-      응답 크기 감소
+      KOSPI + KOSDAQ 병렬 호출
     */
-    const stocks = rows.map(row => ({
-      date: row.BAS_DD,
 
-      code:
-        row.ISU_SRT_CD ||
-        row.ISU_CD ||
-        "",
+    const results = await Promise.all(
+      markets.map(fetchMarket)
+    );
 
-      name:
-        row.ISU_NM || "",
+    const stocks = [];
 
-      open:
-        Number(row.TDD_OPNPRC || 0),
+    for (const result of results) {
+      for (const row of result.rows) {
+        const code = String(
+          row.ISU_SRT_CD ||
+          row.ISU_CD ||
+          ""
+        ).trim();
 
-      high:
-        Number(row.TDD_HGPRC || 0),
+        /*
+          보통주/우선주 등을 포함해
+          KRX가 반환하는 6자리 상장 종목을 유지.
+          이후 market-scan에서 투자 가능성 필터링.
+        */
 
-      low:
-        Number(row.TDD_LWPRC || 0),
+        if (!/^\d{6}$/.test(code)) {
+          continue;
+        }
 
-      close:
-        Number(row.TDD_CLSPRC || 0),
+        stocks.push({
+          date:
+            row.BAS_DD || date,
 
-      changeRate:
-        Number(row.FLUC_RT || 0),
+          market:
+            result.market,
 
-      volume:
-        Number(row.ACC_TRDVOL || 0),
+          code,
 
-      tradingValue:
-        Number(row.ACC_TRDVAL || 0),
+          name:
+            String(row.ISU_NM || "").trim(),
 
-      marketCap:
-        Number(row.MKTCAP || 0)
-    }));
+          open:
+            Number(row.TDD_OPNPRC || 0),
 
-    return res.status(200).json({
-      ok: true,
-      date,
-      count: stocks.length,
-      stocks
-    });
+          high:
+            Number(row.TDD_HGPRC || 0),
 
-  } catch (error) {
-    console.error("MARKET SNAPSHOT ERROR", error);
+          low:
+            Number(row.TDD_LWPRC || 0),
 
-    return res.status(500).json({
-      ok: false,
-      error: String(error?.message || error)
-    });
-  }
-};
+          close:
+            Number(row.TDD_CLSPRC || 0),
+
+          changeRate:
+            Number(row.FLUC_RT || 0),
+
+        
