@@ -525,4 +525,158 @@ module.exports = async function handler(req, res) {
           marketCap:
             stock.marketCap,
 
-         
+          marketRanks: {
+            tradingValue:
+              vr + 1,
+
+            change:
+              cr + 1
+          },
+
+          reasons
+        };
+      });
+
+    /* ==========================================
+       정밀분석 후보 선정
+
+       최소 10개 요구를 충분히 만족시키기 위해
+       기본 30개 반환.
+
+       query:
+       ?limit=50 등으로 변경 가능
+    ========================================== */
+
+    const requestedLimit =
+      parseInt(
+        req.query.limit || "30",
+        10
+      );
+
+    const limit =
+      clamp(
+        Number.isFinite(
+          requestedLimit
+        )
+          ? requestedLimit
+          : 30,
+        10,
+        100
+      );
+
+    const selected =
+      candidates
+        .sort((a, b) => {
+
+          if (
+            b.discoveryScore !==
+            a.discoveryScore
+          ) {
+            return (
+              b.discoveryScore -
+              a.discoveryScore
+            );
+          }
+
+          return (
+            b.tradingValue -
+            a.tradingValue
+          );
+        })
+        .slice(
+          0,
+          limit
+        );
+
+    /* ==========================================
+       응답 캐시
+
+       스캔 결과를 계속 재계산할 필요 없음
+    ========================================== */
+
+    res.setHeader(
+      "Cache-Control",
+      "public, s-maxage=1800, stale-while-revalidate=3600"
+    );
+
+    /* ==========================================
+       RESPONSE
+    ========================================== */
+
+    return res.status(200).json({
+      ok: true,
+
+      version:
+        "FAST_SCAN_V1",
+
+      date:
+        usedDate,
+
+      market: {
+        totalStocks:
+          allStocks.length,
+
+        investableStocks:
+          investable.length,
+
+        candidateStocks:
+          candidates.length,
+
+        returned:
+          selected.length
+      },
+
+      filter: {
+        minMarketCap:
+          MIN_MARKET_CAP,
+
+        minTradingValue:
+          MIN_TRADING_VALUE
+      },
+
+      /*
+        중요:
+        discoveryScore는
+        Leader / Early / Entry 점수가 아님.
+
+        정밀 분석 대상을 빠르게 찾기 위한
+        1차 후보점수.
+      */
+      scoreGuide: {
+        discovery:
+          "전체 시장에서 정밀 분석할 종목을 고르는 1차 후보 점수",
+
+        leader:
+          "현재 실제 주도주인지 평가",
+
+        early:
+          "차기 주도주로 전환되는 초입인지 평가",
+
+        entry:
+          "현재 가격에서 신규 매수하기 좋은 위치인지 평가",
+
+        exhaustion:
+          "공세 소멸 및 추세 종료 위험. 높을수록 위험"
+      },
+
+      candidates:
+        selected
+    });
+
+  } catch (error) {
+
+    console.error(
+      "MARKET SCAN ERROR",
+      error
+    );
+
+    return res.status(500).json({
+      ok: false,
+      error:
+        String(
+          error?.message ||
+          error
+        )
+    });
+  }
+};
