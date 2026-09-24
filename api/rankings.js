@@ -3,15 +3,16 @@ module.exports = async function handler(req, res) {
 
   try {
     /* =========================================================
-       LEADER CYCLE - RANKINGS V6 BULK
+       LEADER CYCLE - RANKINGS V6.1 BULK AUTO REFILL
 
        핵심:
-       1. market-scan으로 후보 선정
-       2. 후보들의 시장(KOSPI/KOSDAQ) 확인
-       3. KRX 날짜별 데이터를 딱 한 번씩 호출
-       4. 후보 전체 100거래일 동시 수집
-       5. stock-detail 점수식을 rankings 내부에서 직접 계산
-       6. stock-detail / market-history 반복 호출 제거
+       1. market-scan에서 최종 목표보다 후보를 넉넉히 확보
+       2. KRX 날짜별 데이터를 딱 한 번씩 호출
+       3. 후보 전체 history를 동시에 수집
+       4. history 부족 종목은 자동 SKIP
+       5. 다음 순위 후보로 자동 보충
+       6. 정상 분석 종목 limit개 확보
+       7. stock-detail / market-history 반복 호출 없음
     ========================================================= */
 
     const apiKey = process.env.KRX_API_KEY;
@@ -184,6 +185,13 @@ module.exports = async function handler(req, res) {
 
     /* =========================================================
        OPTIONS
+
+       limit = 최종 정상 분석 목표
+
+       예:
+       limit=10
+       → 최종 정상 분석 10종목 목표
+       → scan에서는 최대 20종목 확보
     ========================================================= */
 
     const requestedLimit =
@@ -201,6 +209,13 @@ module.exports = async function handler(req, res) {
         20
       );
 
+    const scanLimit =
+      clamp(
+        limit * 2,
+        limit,
+        40
+      );
+
     const requestedDate =
       String(
         req.query.date || ""
@@ -208,10 +223,12 @@ module.exports = async function handler(req, res) {
 
     /* =========================================================
        1. MARKET SCAN
+
+       최종 목표보다 넉넉하게 후보 확보
     ========================================================= */
 
     let scanUrl =
-      `${baseUrl}/api/market-scan?limit=${limit}`;
+      `${baseUrl}/api/market-scan?limit=${scanLimit}`;
 
     if (/^\d{8}$/.test(requestedDate)) {
       scanUrl +=
@@ -232,7 +249,7 @@ module.exports = async function handler(req, res) {
       return res.status(504).json({
         ok: false,
         version:
-          "LEADER_CYCLE_RANKINGS_V6_BULK",
+          "LEADER_CYCLE_RANKINGS_V6_1_AUTO_REFILL",
         error:
           "market-scan timeout",
         detail:
@@ -255,47 +272,53 @@ module.exports = async function handler(req, res) {
       return res.status(500).json({
         ok: false,
         version:
-          "LEADER_CYCLE_RANKINGS_V6_BULK",
+          "LEADER_CYCLE_RANKINGS_V6_1_AUTO_REFILL",
         error:
           "market-scan 호출 실패",
         detail: scan
       });
     }
 
+    /*
+      scan 순서를 그대로 유지.
+
+      상위 후보가 history 부족이면
+      다음 후보가 자동으로 보충된다.
+    */
+
     const candidates =
       scan.candidates
-        .slice(0, limit);
+        .slice(0, scanLimit);
 
     if (!candidates.length) {
       return res.status(200).json({
         ok: true,
         version:
-          "LEADER_CYCLE_RANKINGS_V6_BULK",
+          "LEADER_CYCLE_RANKINGS_V6_1_AUTO_REFILL",
         date:
           scan.date || null,
         stats: {
+          target: limit,
           candidates: 0,
           analyzed: 0,
-          failed: 0
+          skipped: 0,
+          failed: 0,
+          buyable: 0
+        },
+        topPicks: {
+          entry: null,
+          leader: null,
+          early: null,
+          exhaustion: null
         },
         entryRanking: [],
         leaderRanking: [],
         earlyRanking: [],
-        exhaustionRanking: []
+        exhaustionRanking: [],
+        failed: [],
+        skipped: []
       });
     }
-
-    const candidateMap =
-      new Map();
-
-    candidates.forEach(
-      candidate => {
-        candidateMap.set(
-          String(candidate.code),
-          candidate
-        );
-      }
-    );
 
     const candidateCodes =
       new Set(
@@ -346,7 +369,9 @@ module.exports = async function handler(req, res) {
        날짜 후보
 
        100 거래일 확보용
-       주말 제외 165일 생성
+
+       주말 제외 전 달력일 후보 생성.
+       공휴일 여유 포함.
     ========================================================= */
 
     const candidateDates = [];
@@ -441,7 +466,7 @@ module.exports = async function handler(req, res) {
     /* =========================================================
        각 후보 기록 저장소
 
-       code -> []
+       code -> history[]
     ========================================================= */
 
     const histories =
@@ -529,15 +554,16 @@ module.exports = async function handler(req, res) {
     /* =========================================================
        2. BULK HISTORY
 
-       날짜 하나당:
-       KOSPI 1회 + KOSDAQ 1회
+       날짜 하나당
+       KOSPI 1회 + KOSDAQ 1회.
 
-       그리고 응답에서 후보 종목만 추출.
+       응답에서 후보 종목만 추출.
 
        종목별 API 반복 호출 없음.
     ========================================================= */
 
     const REQUIRED_DAYS = 100;
+    const MIN_ANALYSIS_DAYS = 60;
 
     const DATE_BATCH_SIZE = 8;
 
@@ -549,11 +575,42 @@ module.exports = async function handler(req, res) {
       i += DATE_BATCH_SIZE
     ) {
       /*
-        모든 후보가 100일 확보되면 즉시 종료
+        scan 순서 기준으로 history 60일 이상인
+        후보를 찾는다.
+
+        그중 최종 limit개가 모두 100일을
+        확보했다면 더 이상 KRX를 조회하지 않는다.
+
+        history가 짧은 신규 상장 종목 때문에
+        전체 작업이 지연되는 것을 방지한다.
       */
 
-      const complete =
-        candidates.every(
+      const usableCandidates =
+        candidates.filter(
+          candidate =>
+            (
+              histories.get(
+                String(
+                  candidate.code
+                )
+              ) || []
+            ).length >=
+            MIN_ANALYSIS_DAYS
+        );
+
+      const targetCandidates =
+        usableCandidates.slice(
+          0,
+          limit
+        );
+
+      const enoughCandidates =
+        targetCandidates.length >=
+        limit;
+
+      const targetComplete =
+        enoughCandidates &&
+        targetCandidates.every(
           candidate =>
             (
               histories.get(
@@ -565,7 +622,7 @@ module.exports = async function handler(req, res) {
             REQUIRED_DAYS
         );
 
-      if (complete) {
+      if (targetComplete) {
         break;
       }
 
@@ -575,13 +632,6 @@ module.exports = async function handler(req, res) {
           i +
           DATE_BATCH_SIZE
         );
-
-      /*
-        날짜별 KOSPI/KOSDAQ을
-        동시에 조회
-
-        batch 8이면 최대 16 요청
-      */
 
       const jobs = [];
 
@@ -643,8 +693,15 @@ module.exports = async function handler(req, res) {
           const history =
             histories.get(code);
 
+          if (!history) {
+            continue;
+          }
+
+          /*
+            100일까지 저장.
+          */
+
           if (
-            !history ||
             history.length >=
             REQUIRED_DAYS
           ) {
@@ -664,10 +721,6 @@ module.exports = async function handler(req, res) {
             continue;
           }
 
-          /*
-            중복 날짜 방지
-          */
-
           const duplicate =
             history.some(
               x =>
@@ -685,9 +738,7 @@ module.exports = async function handler(req, res) {
     }
 
     /* =========================================================
-       3. 종목별 분석 함수
-
-       기존 STOCK_DETAIL_V3 계산식 이식
+       3. 종목별 분석
     ========================================================= */
 
     function analyzeStock(
@@ -703,7 +754,8 @@ module.exports = async function handler(req, res) {
         !Array.isArray(
           rawHistory
         ) ||
-        rawHistory.length < 60
+        rawHistory.length <
+          MIN_ANALYSIS_DAYS
       ) {
         return {
           ok: false,
@@ -733,10 +785,7 @@ module.exports = async function handler(req, res) {
           );
 
       /*
-        MA 계산
-
-        newestFirst[index] 기준
-        그 날짜부터 과거 방향으로 period개
+        이동평균 계산
       */
 
       function movingAverage(
@@ -790,8 +839,6 @@ module.exports = async function handler(req, res) {
 
       /*
         과거 -> 최신
-
-        기존 stock-detail과 같은 방향
       */
 
       const rows =
@@ -2072,31 +2119,89 @@ module.exports = async function handler(req, res) {
     }
 
     /* =========================================================
-       4. 모든 후보 분석
+       4. 후보 분석 + 자동 보충
+
+       scan 순서대로 검사.
+
+       history 60일 미만
+       → SKIP
+
+       정상 분석 성공
+       → analyzed 추가
+
+       analyzed가 limit개 되면 종료.
     ========================================================= */
 
-    const results =
-      candidates.map(
-        candidate =>
-          analyzeStock(
-            candidate,
-            histories.get(
-              String(
-                candidate.code
-              )
-            ) || []
+    const analyzed = [];
+    const skipped = [];
+
+    for (
+      const candidate of candidates
+    ) {
+      if (
+        analyzed.length >=
+        limit
+      ) {
+        break;
+      }
+
+      const history =
+        histories.get(
+          String(
+            candidate.code
           )
-      );
+        ) || [];
 
-    const analyzed =
-      results.filter(
-        x => x.ok
-      );
+      if (
+        history.length <
+        MIN_ANALYSIS_DAYS
+      ) {
+        skipped.push({
+          code:
+            String(
+              candidate.code
+            ),
 
-    const failed =
-      results.filter(
-        x => !x.ok
-      );
+          name:
+            candidate.name,
+
+          reason:
+            `history 부족 (${history.length}일)`
+        });
+
+        continue;
+      }
+
+      const result =
+        analyzeStock(
+          candidate,
+          history
+        );
+
+      if (result.ok) {
+        analyzed.push(
+          result
+        );
+
+      } else {
+        skipped.push({
+          code:
+            result.code,
+
+          name:
+            result.name,
+
+          reason:
+            result.error
+        });
+      }
+    }
+
+    /*
+      history 부족은 시스템 장애가 아니다.
+    */
+
+    const failed = [];
 
     /* =========================================================
        BUYABLE
@@ -2237,7 +2342,7 @@ module.exports = async function handler(req, res) {
       ok: true,
 
       version:
-        "LEADER_CYCLE_RANKINGS_V6_BULK",
+        "LEADER_CYCLE_RANKINGS_V6_1_AUTO_REFILL",
 
       date:
         scan.date ||
@@ -2249,7 +2354,7 @@ module.exports = async function handler(req, res) {
           startedAt,
 
         architecture:
-          "BULK_KRX_HISTORY",
+          "BULK_KRX_HISTORY_AUTO_REFILL",
 
         stockDetailCalls:
           0,
@@ -2259,8 +2364,17 @@ module.exports = async function handler(req, res) {
 
         krxRequests,
 
-        candidates:
-          candidates.length
+        requestedCandidates:
+          limit,
+
+        scanCandidates:
+          candidates.length,
+
+        usableCandidates:
+          analyzed.length,
+
+        skippedCandidates:
+          skipped.length
       },
 
       stats: {
@@ -2279,8 +2393,14 @@ module.exports = async function handler(req, res) {
         discoveryCandidates:
           candidates.length,
 
+        target:
+          limit,
+
         analyzed:
           analyzed.length,
+
+        skipped:
+          skipped.length,
 
         failed:
           failed.length,
@@ -2332,24 +2452,14 @@ module.exports = async function handler(req, res) {
 
       exhaustionRanking,
 
-      failed:
-        failed.map(
-          x => ({
-            code:
-              x.code,
+      failed: [],
 
-            name:
-              x.name,
-
-            error:
-              x.error
-          })
-        )
+      skipped
     });
 
   } catch (error) {
     console.error(
-      "RANKINGS V6 BULK ERROR",
+      "RANKINGS V6.1 AUTO REFILL ERROR",
       error
     );
 
@@ -2357,7 +2467,7 @@ module.exports = async function handler(req, res) {
       ok: false,
 
       version:
-        "LEADER_CYCLE_RANKINGS_V6_BULK",
+        "LEADER_CYCLE_RANKINGS_V6_1_AUTO_REFILL",
 
       elapsedMs:
         Date.now() -
