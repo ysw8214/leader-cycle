@@ -7,219 +7,505 @@
 
 <style>
 *{box-sizing:border-box}
+
 body{
-margin:0;background:#070a0f;color:#f4f7fa;
-font-family:-apple-system,BlinkMacSystemFont,"Noto Sans KR",sans-serif
+  margin:0;
+  background:#070a0f;
+  color:#f4f7fa;
+  font-family:-apple-system,BlinkMacSystemFont,"Noto Sans KR",sans-serif;
 }
-main{max-width:950px;margin:auto;padding:20px 14px 70px}
-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:27px}
-.logo{font-weight:900;font-size:20px}.logo b{color:#36e39a}
-.muted{color:#7c8998;font-size:11px}
-h1{font-size:26px;margin:0 0 7px}
-.desc{color:#84909f;font-size:12px;line-height:1.65}
+
+main{
+  max-width:950px;
+  margin:auto;
+  padding:20px 14px 70px;
+}
+
+header{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  margin-bottom:27px;
+}
+
+.logo{
+  font-weight:900;
+  font-size:20px;
+}
+
+.logo b{color:#36e39a}
+
+.muted{
+  color:#7c8998;
+  font-size:11px;
+}
+
+h1{
+  font-size:26px;
+  margin:0 0 7px;
+}
+
+.desc{
+  color:#84909f;
+  font-size:12px;
+  line-height:1.65;
+}
+
 .card{
-background:#10151d;border:1px solid #222b37;
-border-radius:17px;padding:17px;margin-top:15px
+  background:#10151d;
+  border:1px solid #222b37;
+  border-radius:17px;
+  padding:17px;
+  margin-top:15px;
 }
-.title{color:#7d8998;font-size:10px;font-weight:900;letter-spacing:1.2px;margin-bottom:13px}
+
+.title{
+  color:#7d8998;
+  font-size:10px;
+  font-weight:900;
+  letter-spacing:1.2px;
+  margin-bottom:13px;
+}
+
 .item{
-display:grid;grid-template-columns:27px 1fr 50px 82px;
-gap:7px;align-items:center;padding:14px 0;
-border-bottom:1px solid #1e2631;cursor:pointer
+  display:grid;
+  grid-template-columns:27px 1fr 50px 82px;
+  gap:7px;
+  align-items:center;
+  padding:14px 0;
+  border-bottom:1px solid #1e2631;
+  cursor:pointer;
 }
+
 .item:last-child{border:0}
-.rank{color:#657181;font-size:11px}
+
+.rank{
+  color:#657181;
+  font-size:11px;
+}
+
 .name{font-weight:800}
-.sub{color:#6f7c8b;font-size:9px;margin-top:4px}
-.score{font-size:18px;font-weight:900}
-.tag{text-align:center;padding:6px 3px;border-radius:14px;font-size:8px;font-weight:900}
-.leader{background:#12372d;color:#35e69a}
-.emerge{background:#102d49;color:#64b4ff}
-.watch{background:#3b3016;color:#ffd166}
-.weak{background:#291a20;color:#e27787}
-.bar{height:3px;background:#232c37;border-radius:5px;margin-top:6px}
-.fill{height:100%;background:linear-gradient(90deg,#4d9fff,#35e69a);border-radius:5px}
-.tabs{display:flex;gap:7px;margin-top:20px;overflow:auto}
+
+.sub{
+  color:#6f7c8b;
+  font-size:9px;
+  margin-top:4px;
+}
+
+.score{
+  font-size:18px;
+  font-weight:900;
+}
+
+.tag{
+  text-align:center;
+  padding:6px 3px;
+  border-radius:14px;
+  font-size:8px;
+  font-weight:900;
+}
+
+.leader{
+  background:#12372d;
+  color:#35e69a;
+}
+
+.emerge{
+  background:#102d49;
+  color:#64b4ff;
+}
+
+.watch{
+  background:#3b3016;
+  color:#ffd166;
+}
+
+.weak{
+  background:#291a20;
+  color:#e27787;
+}
+
+.bar{
+  height:3px;
+  background:#232c37;
+  border-radius:5px;
+  margin-top:6px;
+}
+
+.fill{
+  height:100%;
+  background:linear-gradient(90deg,#4d9fff,#35e69a);
+  border-radius:5px;
+}
+
+.tabs{
+  display:flex;
+  gap:7px;
+  margin-top:20px;
+  overflow:auto;
+}
+
 .tab{
-border:1px solid #26313e;background:#111821;color:#8996a5;
-padding:9px 12px;border-radius:10px;font-size:10px;font-weight:800;
-white-space:nowrap;cursor:pointer
+  border:1px solid #26313e;
+  background:#111821;
+  color:#8996a5;
+  padding:9px 12px;
+  border-radius:10px;
+  font-size:10px;
+  font-weight:800;
+  white-space:nowrap;
+  cursor:pointer;
 }
-.tab.active{background:#1b2732;color:#fff;border-color:#3b4b5d}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:9px}
-.box{background:#151b24;border-radius:11px;padding:13px}
-.box small{color:#7c8998;font-size:9px}
-.box strong{display:block;font-size:19px;margin-top:6px}
-.green{color:#35e69a}.yellow{color:#ffd166}.red{color:#ff7184}
+
+.tab.active{
+  background:#1b2732;
+  color:#fff;
+  border-color:#3b4b5d;
+}
+
+.grid{
+  display:grid;
+  grid-template-columns:1fr 1fr;
+  gap:9px;
+}
+
+.box{
+  background:#151b24;
+  border-radius:11px;
+  padding:13px;
+}
+
+.box small{
+  color:#7c8998;
+  font-size:9px;
+}
+
+.box strong{
+  display:block;
+  font-size:19px;
+  margin-top:6px;
+}
+
+.green{color:#35e69a}
+.yellow{color:#ffd166}
+.red{color:#ff7184}
+.blue{color:#55a7ff}
+.orange{color:#ffb454}
+
 .alert{
-background:#13251f;border:1px solid #20513e;color:#70e9b7;
-padding:12px;border-radius:11px;font-size:10px;line-height:1.6;margin-top:12px
+  background:#13251f;
+  border:1px solid #20513e;
+  color:#70e9b7;
+  padding:12px;
+  border-radius:11px;
+  font-size:10px;
+  line-height:1.6;
+  margin-top:12px;
 }
+
 .warning{
-background:#292113;border:1px solid #4c3a20;color:#e8c983;
-padding:12px;border-radius:11px;font-size:10px;line-height:1.6;margin-top:12px
+  background:#292113;
+  border:1px solid #4c3a20;
+  color:#e8c983;
+  padding:12px;
+  border-radius:11px;
+  font-size:10px;
+  line-height:1.6;
+  margin-top:12px;
 }
+
 .back{
-border:0;background:#171f29;color:#d8e0e8;
-padding:9px 12px;border-radius:9px;font-weight:700;margin-bottom:17px
+  border:0;
+  background:#171f29;
+  color:#d8e0e8;
+  padding:9px 12px;
+  border-radius:9px;
+  font-weight:700;
+  margin-bottom:17px;
 }
+
 .stock{
-display:flex;justify-content:space-between;align-items:center;
-padding:14px 1px;border-bottom:1px solid #202833;cursor:pointer
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  padding:14px 1px;
+  border-bottom:1px solid #202833;
+  cursor:pointer;
 }
+
 .stock:last-child{border:0}
+
 .stock strong{font-size:14px}
-.stock small{display:block;color:#718091;margin-top:4px;font-size:9px}
-.stockScore{font-size:19px;font-weight:900;color:#35e69a}
-#scanner,#sectorPage,#stockPage{display:none}
-footer{text-align:center;color:#515d6c;font-size:9px;margin-top:30px;line-height:1.7}
+
+.stock small{
+  display:block;
+  color:#718091;
+  margin-top:4px;
+  font-size:9px;
+}
+
+.stockScore{
+  font-size:19px;
+  font-weight:900;
+  color:#35e69a;
+}
+
+.chartWrap{
+  margin-top:14px;
+  background:#0b1017;
+  border:1px solid #202a36;
+  border-radius:13px;
+  padding:10px;
+}
+
+#priceChart{
+  width:100%;
+  height:300px;
+  display:block;
+}
+
+.loading{
+  color:#7c8998;
+  font-size:11px;
+  padding:25px 0;
+  text-align:center;
+}
+
+.metricRow{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  margin-top:12px;
+}
+
+.metric{
+  flex:1;
+  min-width:80px;
+  background:#151b24;
+  padding:10px;
+  border-radius:10px;
+}
+
+.metric small{
+  display:block;
+  color:#748292;
+  font-size:8px;
+}
+
+.metric strong{
+  display:block;
+  margin-top:5px;
+  font-size:13px;
+}
+
+#scanner,#sectorPage,#stockPage{
+  display:none;
+}
+
+footer{
+  text-align:center;
+  color:#515d6c;
+  font-size:9px;
+  margin-top:30px;
+  line-height:1.7;
+}
 </style>
 </head>
 
 <body>
+
 <main>
 
 <header>
-<div class="logo">LEADER <b>CYCLE</b></div>
-<div class="muted" id="today"></div>
+  <div class="logo">LEADER <b>CYCLE</b></div>
+  <div class="muted" id="today"></div>
 </header>
+
+
+<!-- ================= HOME ================= -->
 
 <div id="home">
 
 <h1>주도주 사이클 탐지 시스템</h1>
+
 <div class="desc">
-전체 시장을 매일 스캔하여 조건을 통과한 섹터만 표시합니다.<br>
-현재 주도주와 다음 주도주 후보를 분리해 추적합니다.
+전체 시장을 스캔하여 현재 주도주와 차기 주도주 후보를 추적합니다.<br>
+거래대금 · 상승률 · 추세 · 이동평균 · 모멘텀을 종합 분석합니다.
 </div>
 
 <div class="tabs">
-<button class="tab active">DASHBOARD</button>
-<button class="tab" onclick="showScanner()">전체 시장 SCANNER</button>
+  <button class="tab active">DASHBOARD</button>
+  <button class="tab" onclick="showScanner()">전체 시장 SCANNER</button>
 </div>
 
 <section class="card">
-<div class="title">🔥 CURRENT LEADERS</div>
-<div id="leaders"></div>
+  <div class="title">🔥 CURRENT LEADERS</div>
+  <div id="leaders"></div>
 </section>
 
 <section class="card">
-<div class="title">🚀 NEXT LEADER RADAR</div>
-<div id="radar"></div>
+  <div class="title">🚀 NEXT LEADER RADAR</div>
+  <div id="radar"></div>
 </section>
 
 <section class="card">
-<div class="title">⚡ FASTEST RISING SECTORS</div>
-<div id="rising"></div>
+  <div class="title">⚡ FASTEST RISING SECTORS</div>
+  <div id="rising"></div>
 </section>
 
 <div class="warning">
-현재 시장 데이터는 시스템 테스트용 샘플입니다.
-KRX API 승인 후 전 섹터·전 종목 실제 데이터로 자동 교체됩니다.
+현재 섹터 분류 화면은 개발 단계입니다.
+종목 상세 데이터는 KRX 기반 API 데이터를 사용합니다.
 </div>
 
 </div>
 
+
+<!-- ================= SCANNER ================= -->
 
 <div id="scanner">
 
 <button class="back" onclick="goHome()">← Dashboard</button>
 
 <h1>전체 시장 Scanner</h1>
+
 <div class="desc">
-메인 화면에 나타나지 않는 섹터까지 내부에서 모두 추적합니다.
+전체 시장에서 주도주 후보를 추적합니다.
 </div>
 
 <section class="card">
-<div class="title">ALL SECTORS · SCORE RANKING</div>
-<div id="allSectors"></div>
+  <div class="title">ALL SECTORS · SCORE RANKING</div>
+  <div id="allSectors"></div>
 </section>
 
 </div>
 
+
+<!-- ================= SECTOR ================= -->
 
 <div id="sectorPage">
 
 <button class="back" onclick="backPrevious()">← 뒤로</button>
 
 <h1 id="sectorTitle"></h1>
-<div class="desc">섹터 분석 및 내부 주도종목</div>
+
+<div class="desc">
+섹터 분석 및 내부 주도종목
+</div>
 
 <section class="card">
+
 <div class="grid">
 
 <div class="box">
-<small>HAN CYCLE</small>
-<strong id="hanScore"></strong>
+  <small>HAN CYCLE</small>
+  <strong id="hanScore"></strong>
 </div>
 
 <div class="box">
-<small>EARLY LEADER</small>
-<strong id="earlyScore" class="green"></strong>
+  <small>EARLY LEADER</small>
+  <strong id="earlyScore" class="green"></strong>
 </div>
 
 <div class="box">
-<small>RANK</small>
-<strong id="sectorRank"></strong>
+  <small>RANK</small>
+  <strong id="sectorRank"></strong>
 </div>
 
 <div class="box">
-<small>RANK VELOCITY</small>
-<strong id="velocity"></strong>
+  <small>RANK VELOCITY</small>
+  <strong id="velocity"></strong>
 </div>
 
 </div>
+
 </section>
 
 <section class="card">
-<div class="title">LEADING STOCKS</div>
-<div id="stocks"></div>
+  <div class="title">LEADING STOCKS</div>
+  <div id="stocks"></div>
 </section>
 
 </div>
 
+
+<!-- ================= STOCK ================= -->
 
 <div id="stockPage">
 
 <button class="back" onclick="backSector()">← 섹터</button>
 
 <h1 id="stockTitle"></h1>
+
 <div class="desc" id="ticker"></div>
 
 <section class="card">
 
-<div class="title">CYCLE ANALYSIS</div>
+<div class="title">LIVE MARKET ANALYSIS</div>
+
+<div id="stockLoading" class="loading">
+KRX 데이터를 분석하고 있습니다...
+</div>
+
+<div id="stockContent" style="display:none">
 
 <div class="grid">
 
 <div class="box">
-<small>CYCLE SCORE</small>
-<strong id="stockCycle" class="green"></strong>
+  <small>LEADER SCORE</small>
+  <strong id="stockCycle" class="green">-</strong>
 </div>
 
 <div class="box">
-<small>4·13·26·52W</small>
-<strong class="green">정배열</strong>
+  <small>STAGE</small>
+  <strong id="stockStage">-</strong>
 </div>
 
 <div class="box">
-<small>EARNINGS DELTA</small>
-<strong class="green">▲</strong>
+  <small>CURRENT PRICE</small>
+  <strong id="currentPrice">-</strong>
 </div>
 
 <div class="box">
-<small>CULMINATION RISK</small>
-<strong class="yellow">WATCH</strong>
+  <small>CHANGE</small>
+  <strong id="changeRate">-</strong>
 </div>
 
 </div>
 
-<div class="alert">
-상대강도 · 이동평균 정배열 · 실적 Delta · 거래대금 · 수급을 종합 추적합니다.
+
+<div class="chartWrap">
+  <canvas id="priceChart"></canvas>
+</div>
+
+
+<div class="metricRow">
+
+<div class="metric">
+  <small>MA5</small>
+  <strong id="ma5Value" class="green">-</strong>
+</div>
+
+<div class="metric">
+  <small>MA20</small>
+  <strong id="ma20Value" class="blue">-</strong>
+</div>
+
+<div class="metric">
+  <small>MA60</small>
+  <strong id="ma60Value" class="orange">-</strong>
+</div>
+
+</div>
+
+<div id="trendMessage" class="alert"></div>
+
 </div>
 
 </section>
 
 </div>
+
 
 <footer>
 LEADER CYCLE ANALYTICS<br>
@@ -231,10 +517,10 @@ LEADER CYCLE ANALYTICS<br>
 
 <script>
 
-/* ==========================================
-   전체 시장 데이터
-   향후 이 부분을 KRX 자동 데이터로 교체
-========================================== */
+/* =====================================================
+   임시 섹터 데이터
+   다음 단계에서 실제 Scanner 데이터로 교체 예정
+===================================================== */
 
 const marketData=[
 
@@ -332,16 +618,6 @@ stocks:[
 ]},
 
 {
-name:"화장품",
-han:49,
-early:57,
-velocity:-1,
-stage:"NEUTRAL",
-stocks:[
-["아모레퍼시픽","090430",61]
-]},
-
-{
 name:"자동차",
 han:46,
 early:52,
@@ -350,61 +626,29 @@ stage:"NEUTRAL",
 stocks:[
 ["현대차","005380",59],
 ["기아","000270",57]
-]},
-
-{
-name:"게임",
-han:42,
-early:48,
-velocity:2,
-stage:"NEUTRAL",
-stocks:[
-["크래프톤","259960",55]
-]},
-
-{
-name:"철강",
-han:37,
-early:41,
-velocity:-4,
-stage:"WEAK",
-stocks:[
-["POSCO홀딩스","005490",48]
 ]}
 
 ];
 
 
-/* ==========================================
-   핵심 자동 선별 알고리즘
-========================================== */
+/* =====================================================
+   DASHBOARD
+===================================================== */
 
 function calculate(){
-
-/* 현재 주도섹터
-   HAN 75점 이상만 메인 노출 */
 
 const leaders=marketData
 .filter(x=>x.han>=75)
 .sort((a,b)=>b.han-a.han);
 
-
-/* 차기 주도섹터
-   아직 HAN 75 미만이면서
-   Early Score 65 이상 */
-
 const radar=marketData
 .filter(x=>x.han<75 && x.early>=65)
 .sort((a,b)=>b.early-a.early);
-
-
-/* 가장 빠르게 순위가 상승하는 섹터 */
 
 const rising=[...marketData]
 .filter(x=>x.velocity>0)
 .sort((a,b)=>b.velocity-a.velocity)
 .slice(0,5);
-
 
 renderList("leaders",leaders,"han");
 renderList("radar",radar,"early");
@@ -413,10 +657,6 @@ renderScanner();
 
 }
 
-
-/* ==========================================
-   화면 생성
-========================================== */
 
 function renderList(id,data,type){
 
@@ -428,8 +668,8 @@ const score=type==="han"?x.han:x.early;
 
 let tagClass="watch";
 
-if(x.stage==="LEADER")tagClass="leader";
-if(x.stage==="EMERGING")tagClass="emerge";
+if(x.stage==="LEADER") tagClass="leader";
+if(x.stage==="EMERGING") tagClass="emerge";
 
 html+=`
 
@@ -453,16 +693,13 @@ HAN ${x.han} · EARLY ${x.early}
 
 </div>
 
-<div class="score">
-${score}
-</div>
+<div class="score">${score}</div>
 
 <div class="tag ${tagClass}">
 ${x.stage}
 </div>
 
 </div>
-
 `;
 
 });
@@ -486,9 +723,7 @@ html+=`
 
 <div class="name">
 ${x.name}
-<div class="sub">
-순위 상승 속도
-</div>
+<div class="sub">순위 상승 속도</div>
 </div>
 
 <div class="score green">
@@ -500,7 +735,6 @@ ${x.name}
 </div>
 
 </div>
-
 `;
 
 });
@@ -523,27 +757,23 @@ let status="NEUTRAL";
 let cls="watch";
 
 if(x.han>=75){
-status="LEADER";
-cls="leader";
+  status="LEADER";
+  cls="leader";
 }
-
 else if(x.early>=75){
-status="EMERGING";
-cls="emerge";
+  status="EMERGING";
+  cls="emerge";
 }
-
 else if(x.han<45){
-status="WEAK";
-cls="weak";
+  status="WEAK";
+  cls="weak";
 }
 
 html+=`
 
 <div class="item" onclick="openSector('${x.name}')">
 
-<div class="rank">
-#${i+1}
-</div>
+<div class="rank">#${i+1}</div>
 
 <div class="name">
 
@@ -555,16 +785,13 @@ HAN ${x.han} · EARLY ${x.early}
 
 </div>
 
-<div class="score">
-${x.han}
-</div>
+<div class="score">${x.han}</div>
 
 <div class="tag ${cls}">
 ${status}
 </div>
 
 </div>
-
 `;
 
 });
@@ -574,9 +801,9 @@ document.getElementById("allSectors").innerHTML=html;
 }
 
 
-/* ==========================================
-   섹터 상세
-========================================== */
+/* =====================================================
+   SECTOR
+===================================================== */
 
 let currentSector=null;
 let previous="home";
@@ -585,13 +812,17 @@ function openSector(name){
 
 currentSector=marketData.find(x=>x.name===name);
 
-document.getElementById("sectorTitle").textContent=currentSector.name;
+document.getElementById("sectorTitle").textContent=
+currentSector.name;
 
-document.getElementById("hanScore").textContent=currentSector.han;
+document.getElementById("hanScore").textContent=
+currentSector.han;
 
-document.getElementById("earlyScore").textContent=currentSector.early;
+document.getElementById("earlyScore").textContent=
+currentSector.early;
 
-const sorted=[...marketData].sort((a,b)=>b.han-a.han);
+const sorted=[...marketData]
+.sort((a,b)=>b.han-a.han);
 
 document.getElementById("sectorRank").textContent=
 "#"+(sorted.findIndex(x=>x.name===name)+1);
@@ -614,7 +845,7 @@ ${i+1}. ${s[0]}
 </strong>
 
 <small>
-${s[1]} · 상세 분석
+${s[1]} · 실제 KRX 분석
 </small>
 
 </div>
@@ -624,7 +855,6 @@ ${s[2]}
 </div>
 
 </div>
-
 `;
 
 });
@@ -640,11 +870,11 @@ window.scrollTo(0,0);
 }
 
 
-/* ==========================================
-   종목 상세
-========================================== */
+/* =====================================================
+   STOCK DETAIL API
+===================================================== */
 
-function openStock(i){
+async function openStock(i){
 
 const s=currentSector.stocks[i];
 
@@ -653,20 +883,296 @@ document.getElementById("stockTitle").textContent=s[0];
 document.getElementById("ticker").textContent=
 currentSector.name+" · "+s[1];
 
-document.getElementById("stockCycle").textContent=s[2];
-
 hideAll();
 
 document.getElementById("stockPage").style.display="block";
 
+document.getElementById("stockLoading").style.display="block";
+
+document.getElementById("stockLoading").innerHTML=
+"KRX 데이터를 분석하고 있습니다...";
+
+document.getElementById("stockContent").style.display="none";
+
 window.scrollTo(0,0);
+
+try{
+
+const response=await fetch(
+"/api/stock-detail?code="+encodeURIComponent(s[1])
+);
+
+const data=await response.json();
+
+if(!response.ok || !data.ok){
+throw new Error(data.error || "데이터 조회 실패");
+}
+
+document.getElementById("stockCycle").textContent=
+data.score?.total ?? "-";
+
+document.getElementById("stockStage").textContent=
+data.stage ?? "-";
+
+document.getElementById("currentPrice").textContent=
+Number(data.price).toLocaleString()+"원";
+
+const rate=Number(data.changeRate || 0);
+
+document.getElementById("changeRate").textContent=
+(rate>0?"+":"")+rate.toFixed(2)+"%";
+
+document.getElementById("changeRate").className=
+rate>=0 ? "green" : "red";
+
+document.getElementById("ma5Value").textContent=
+formatMA(data.movingAverage?.ma5);
+
+document.getElementById("ma20Value").textContent=
+formatMA(data.movingAverage?.ma20);
+
+document.getElementById("ma60Value").textContent=
+formatMA(data.movingAverage?.ma60);
+
+
+let message="";
+
+if(data.trend?.alignment){
+
+message=
+"🔥 완전 정배열 · 현재가 > MA5 > MA20 > MA60";
+
+}
+else if(data.trend?.nearAlignment){
+
+message=
+"🚀 정배열 진입 직전 · MA20/MA60 GAP "+
+Number(data.trend.ma20To60Gap || 0).toFixed(2)+"%";
+
+}
+else if(data.trend?.ma20Rising){
+
+message=
+"👀 MA20 상승 중 · 추세 강화 여부 관찰";
+
+}
+else{
+
+message=
+"⚠️ 현재 완전 정배열 조건은 충족하지 않았습니다.";
+
+}
+
+document.getElementById("trendMessage").textContent=
+message;
+
+drawChart(data.chart || []);
+
+document.getElementById("stockLoading").style.display="none";
+
+document.getElementById("stockContent").style.display="block";
+
+}
+catch(error){
+
+document.getElementById("stockLoading").innerHTML=
+"데이터를 불러오지 못했습니다.<br><br>"+
+error.message;
+
+}
 
 }
 
 
-/* ==========================================
-   페이지 이동
-========================================== */
+function formatMA(value){
+
+if(value===null || value===undefined){
+return "-";
+}
+
+return Math.round(Number(value)).toLocaleString();
+
+}
+
+
+/* =====================================================
+   PRICE + MOVING AVERAGE CHART
+===================================================== */
+
+function drawChart(chart){
+
+const canvas=document.getElementById("priceChart");
+
+const width=canvas.clientWidth || 320;
+const height=300;
+
+const dpr=window.devicePixelRatio || 1;
+
+canvas.width=width*dpr;
+canvas.height=height*dpr;
+
+const ctx=canvas.getContext("2d");
+
+ctx.setTransform(dpr,0,0,dpr,0,0);
+
+ctx.clearRect(0,0,width,height);
+
+const data=[...chart]
+.reverse()
+.slice(-100);
+
+if(!data.length){
+
+ctx.fillStyle="#7c8998";
+ctx.font="12px sans-serif";
+ctx.fillText("차트 데이터 없음",20,40);
+
+return;
+
+}
+
+const values=[];
+
+data.forEach(x=>{
+
+["close","ma5","ma20","ma60"].forEach(k=>{
+
+const v=Number(x[k]);
+
+if(Number.isFinite(v)){
+values.push(v);
+}
+
+});
+
+});
+
+if(!values.length)return;
+
+let min=Math.min(...values);
+let max=Math.max(...values);
+
+const range=max-min || 1;
+
+min-=range*0.08;
+max+=range*0.08;
+
+const left=12;
+const right=10;
+const top=30;
+const bottom=20;
+
+const chartWidth=width-left-right;
+const chartHeight=height-top-bottom;
+
+
+function xPos(i){
+
+if(data.length<=1)return left;
+
+return left+
+(i/(data.length-1))*chartWidth;
+
+}
+
+
+function yPos(value){
+
+return top+
+((max-value)/(max-min))*chartHeight;
+
+}
+
+
+/* GRID */
+
+ctx.strokeStyle="#19222d";
+ctx.lineWidth=1;
+
+for(let i=0;i<5;i++){
+
+const y=top+(chartHeight/4)*i;
+
+ctx.beginPath();
+ctx.moveTo(left,y);
+ctx.lineTo(width-right,y);
+ctx.stroke();
+
+}
+
+
+/* LINE DRAWER */
+
+function drawLine(key,color,lineWidth){
+
+ctx.beginPath();
+
+let started=false;
+
+data.forEach((row,i)=>{
+
+const value=Number(row[key]);
+
+if(!Number.isFinite(value)){
+started=false;
+return;
+}
+
+const x=xPos(i);
+const y=yPos(value);
+
+if(!started){
+
+ctx.moveTo(x,y);
+started=true;
+
+}else{
+
+ctx.lineTo(x,y);
+
+}
+
+});
+
+ctx.strokeStyle=color;
+ctx.lineWidth=lineWidth;
+ctx.lineJoin="round";
+ctx.lineCap="round";
+ctx.stroke();
+
+}
+
+
+/* 실제 종가 + 이동평균 */
+
+drawLine("close","#f1f5f9",2.2);
+drawLine("ma5","#35e69a",1.7);
+drawLine("ma20","#55a7ff",1.7);
+drawLine("ma60","#ffb454",1.7);
+
+
+/* LEGEND */
+
+ctx.font="10px -apple-system,BlinkMacSystemFont,sans-serif";
+
+ctx.fillStyle="#f1f5f9";
+ctx.fillText("PRICE",12,15);
+
+ctx.fillStyle="#35e69a";
+ctx.fillText("MA5",55,15);
+
+ctx.fillStyle="#55a7ff";
+ctx.fillText("MA20",90,15);
+
+ctx.fillStyle="#ffb454";
+ctx.fillText("MA60",132,15);
+
+}
+
+
+/* =====================================================
+   NAVIGATION
+===================================================== */
 
 function hideAll(){
 
@@ -726,7 +1232,9 @@ window.scrollTo(0,0);
 }
 
 
-/* 날짜 */
+/* =====================================================
+   DATE
+===================================================== */
 
 const d=new Date();
 
@@ -737,7 +1245,7 @@ String(d.getMonth()+1).padStart(2,"0")+"."+
 String(d.getDate()).padStart(2,"0");
 
 
-/* 실행 */
+/* START */
 
 calculate();
 
