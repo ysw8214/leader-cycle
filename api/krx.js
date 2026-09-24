@@ -9,7 +9,8 @@ export default async function handler(req, res) {
       });
     }
 
-    // 날짜를 안 넣으면 기본값으로 최근 평일 후보 사용
+    // 주소에 date가 있으면 그 날짜 사용
+    // 없으면 2026-09-23 사용
     const date = req.query.date || "20260923";
 
     const url =
@@ -26,24 +27,22 @@ export default async function handler(req, res) {
       })
     });
 
-    if (!response.ok) {
-      const text = await response.text();
+    const text = await response.text();
 
-      return res.status(response.status).json({
-        ok: false,
-        error: "KRX API 호출 실패",
-        status: response.status,
-        detail: text
-      });
+    // KRX가 보내준 원본 응답 확인
+    let data;
+
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = text;
     }
 
-    const data = await response.json();
-
     return res.status(200).json({
-      ok: true,
-      date,
-      count: data.OutBlock_1?.length || 0,
-      data: data.OutBlock_1 || data
+      ok: response.ok,
+      status: response.status,
+      date: date,
+      raw: data
     });
 
   } catch (error) {
