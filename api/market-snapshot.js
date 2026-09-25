@@ -1,26 +1,32 @@
 /* =========================================================
-   LEADER CYCLE - MARKET SNAPSHOT V2
+   LEADER CYCLE - MARKET SNAPSHOT V3
 
    역할
    ---------------------------------------------------------
    1. KOSPI + KOSDAQ 전체 종목 당일 시세 수집
    2. 휴일 / 주말 / 장 시작 전 빈 데이터 자동 감지
    3. 최근 실제 거래일까지 자동 fallback
-   4. sector-scan의 공통 시장 데이터 소스
+   4. sector-scan / market-scan 공통 시장 데이터 소스
+   5. 과거 거래일 snapshot 장기 CDN 캐시
+   6. 오늘 snapshot은 단기 캐시
 
+   V3 핵심
+   ---------------------------------------------------------
+   과거 거래일 데이터는 이미 확정된 데이터이므로
+   Vercel CDN에서 장기 캐시한다.
+
+   rankings V9에서 날짜별 snapshot을 재사용하면
+   동일 과거 날짜를 KRX에서 반복 조회하는 것을 줄일 수 있다.
 ========================================================= */
 
 module.exports = async function handler(req, res) {
-
   const startedAt = Date.now();
 
   try {
-
     const KRX_API_KEY =
       process.env.KRX_API_KEY;
 
     if (!KRX_API_KEY) {
-
       return res.status(500).json({
         ok: false,
         error:
@@ -28,13 +34,11 @@ module.exports = async function handler(req, res) {
       });
     }
 
-
     /* =====================================================
        HELPERS
     ===================================================== */
 
     function num(value) {
-
       if (
         value === undefined ||
         value === null ||
@@ -55,9 +59,7 @@ module.exports = async function handler(req, res) {
         : 0;
     }
 
-
     function formatDate(date) {
-
       const year =
         date.getFullYear();
 
@@ -71,14 +73,10 @@ module.exports = async function handler(req, res) {
           date.getDate()
         ).padStart(2, "0");
 
-      return (
-        `${year}${month}${day}`
-      );
+      return `${year}${month}${day}`;
     }
 
-
     function parseDate(value) {
-
       const text =
         String(value || "")
           .replace(/-/g, "")
@@ -121,9 +119,7 @@ module.exports = async function handler(req, res) {
       return date;
     }
 
-
     function previousDay(date) {
-
       const result =
         new Date(date);
 
@@ -134,48 +130,11 @@ module.exports = async function handler(req, res) {
       return result;
     }
 
-
-    /* =====================================================
-       REQUESTED DATE
-    ===================================================== */
-
-    const rawDate =
-      String(
-        req.query.date || ""
-      ).trim();
-
-
-    let startDate;
-
-
     /*
-      사용자가 날짜를 직접 지정했다면
-      해당 날짜부터 fallback 시작
+      한국 기준 오늘 날짜 YYYYMMDD
     */
 
-    if (rawDate) {
-
-      startDate =
-        parseDate(rawDate);
-
-      if (!startDate) {
-
-        return res.status(400).json({
-          ok: false,
-          error:
-            "date 형식이 올바르지 않습니다.",
-          example:
-            "20260922"
-        });
-      }
-
-    } else {
-
-      /*
-        Vercel 서버는 UTC 기반일 수 있으므로
-        현재 한국 날짜 생성
-      */
-
+    function getKoreaToday() {
       const formatter =
         new Intl.DateTimeFormat(
           "en-CA",
@@ -194,24 +153,18 @@ module.exports = async function handler(req, res) {
           }
         );
 
-
       const parts =
         formatter.formatToParts(
           new Date()
         );
 
-
       const values = {};
 
-      for (
-        const part of parts
-      ) {
-
+      for (const part of parts) {
         if (
           part.type !==
           "literal"
         ) {
-
           values[
             part.type
           ] =
@@ -219,23 +172,59 @@ module.exports = async function handler(req, res) {
         }
       }
 
-
-      startDate =
-        new Date(
-          Number(
-            values.year
-          ),
-
-          Number(
-            values.month
-          ) - 1,
-
-          Number(
-            values.day
-          )
-        );
+      return (
+        `${values.year}` +
+        `${values.month}` +
+        `${values.day}`
+      );
     }
 
+    /* =====================================================
+       REQUESTED DATE
+    ===================================================== */
+
+    const rawDate =
+      String(
+        req.query.date || ""
+      ).trim();
+
+    let startDate;
+
+    /*
+      사용자가 날짜를 직접 지정했다면
+      해당 날짜부터 fallback 시작
+    */
+
+    if (rawDate) {
+      startDate =
+        parseDate(rawDate);
+
+      if (!startDate) {
+        return res.status(400).json({
+          ok: false,
+
+          error:
+            "date 형식이 올바르지 않습니다.",
+
+          example:
+            "20260922"
+        });
+      }
+
+    } else {
+      /*
+        Vercel 서버는 UTC 기반일 수 있으므로
+        현재 한국 날짜 생성
+      */
+
+      const koreaToday =
+        getKoreaToday();
+
+      startDate =
+        parseDate(
+          koreaToday
+        );
+    }
 
     /* =====================================================
        KRX FETCH
@@ -245,9 +234,7 @@ module.exports = async function handler(req, res) {
       url,
       market
     ) {
-
       try {
-
         const response =
           await fetch(
             url,
@@ -265,56 +252,54 @@ module.exports = async function handler(req, res) {
             }
           );
 
-
         const text =
           await response.text();
 
-
         if (!response.ok) {
-
           return {
             ok: false,
+
             market,
+
             status:
               response.status,
+
             rows: [],
+
             error:
               `KRX HTTP ${response.status}`
           };
         }
 
-
         let data;
 
-
         try {
-
           data =
             JSON.parse(text);
 
         } catch {
-
           return {
             ok: false,
+
             market,
+
             status:
               response.status,
+
             rows: [],
+
             error:
               "KRX JSON 파싱 실패"
           };
         }
 
-
         let rows = [];
-
 
         if (
           Array.isArray(
             data?.OutBlock_1
           )
         ) {
-
           rows =
             data.OutBlock_1;
 
@@ -323,7 +308,6 @@ module.exports = async function handler(req, res) {
             data?.output
           )
         ) {
-
           rows =
             data.output;
 
@@ -332,37 +316,41 @@ module.exports = async function handler(req, res) {
             data?.data
           )
         ) {
-
           rows =
             data.data;
 
         } else if (
           Array.isArray(data)
         ) {
-
           rows =
             data;
         }
 
-
         return {
           ok: true,
+
           market,
+
           status:
             response.status,
+
           rows,
+
           rawCount:
             rows.length
         };
 
-
       } catch (error) {
-
         return {
           ok: false,
+
           market,
-          status: null,
+
+          status:
+            null,
+
           rows: [],
+
           error:
             String(
               error?.message ||
@@ -371,7 +359,6 @@ module.exports = async function handler(req, res) {
         };
       }
     }
-
 
     /* =====================================================
        NORMALIZE
@@ -382,7 +369,6 @@ module.exports = async function handler(req, res) {
       market,
       basDd
     ) {
-
       const rawCode =
         String(
           row.ISU_SRT_CD ||
@@ -391,21 +377,17 @@ module.exports = async function handler(req, res) {
           ""
         ).trim();
 
-
       const codeMatch =
         rawCode.match(
           /(\d{6})/
         );
-
 
       const code =
         codeMatch
           ? codeMatch[1]
           : rawCode;
 
-
       return {
-
         date:
           String(
             row.BAS_DD ||
@@ -482,28 +464,26 @@ module.exports = async function handler(req, res) {
       };
     }
 
-
     /* =====================================================
        RECENT TRADING DAY SEARCH
 
-       최대 10일 뒤로 탐색.
-       주말 + 연휴까지 대응.
+       최대 10일 뒤로 탐색
+       주말 + 연휴 대응
     ===================================================== */
 
     const MAX_LOOKBACK_DAYS =
       10;
 
-
     let cursor =
-      new Date(startDate);
-
+      new Date(
+        startDate
+      );
 
     let finalResult =
       null;
 
-
-    const attempts = [];
-
+    const attempts =
+      [];
 
     for (
       let attempt = 0;
@@ -511,18 +491,16 @@ module.exports = async function handler(req, res) {
       MAX_LOOKBACK_DAYS;
       attempt++
     ) {
-
       const basDd =
-        formatDate(cursor);
-
+        formatDate(
+          cursor
+        );
 
       const KOSPI_URL =
         `https://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd?basDd=${basDd}`;
 
-
       const KOSDAQ_URL =
         `https://data-dbg.krx.co.kr/svc/apis/sto/ksq_bydd_trd?basDd=${basDd}`;
-
 
       const [
         kospiResult,
@@ -539,7 +517,6 @@ module.exports = async function handler(req, res) {
             "KOSDAQ"
           )
         ]);
-
 
       const kospiStocks =
         kospiResult.rows
@@ -560,7 +537,6 @@ module.exports = async function handler(req, res) {
               stock.close > 0
           );
 
-
       const kosdaqStocks =
         kosdaqResult.rows
           .map(
@@ -580,12 +556,10 @@ module.exports = async function handler(req, res) {
               stock.close > 0
           );
 
-
       const stocks = [
         ...kospiStocks,
         ...kosdaqStocks
       ];
-
 
       attempts.push({
         date:
@@ -601,21 +575,15 @@ module.exports = async function handler(req, res) {
           stocks.length
       });
 
-
       /*
-        정상 거래일이라면
-        통상 수천 종목이 존재.
-
-        한 시장 API만 일시적으로 실패해도
-        데이터가 존재하면 사용할 수 있도록 한다.
+        데이터가 존재하면
+        실제 거래일로 인정
       */
 
       if (
         stocks.length > 0
       ) {
-
         finalResult = {
-
           date:
             basDd,
 
@@ -630,24 +598,30 @@ module.exports = async function handler(req, res) {
           kosdaqResult
         };
 
-
         break;
       }
 
-
       cursor =
-        previousDay(cursor);
+        previousDay(
+          cursor
+        );
     }
-
 
     /* =====================================================
        NO TRADING DATA
     ===================================================== */
 
     if (!finalResult) {
+      /*
+        실패 응답은 장기 캐시하지 않는다.
+      */
+
+      res.setHeader(
+        "Cache-Control",
+        "no-store"
+      );
 
       return res.status(502).json({
-
         ok: false,
 
         error:
@@ -655,7 +629,9 @@ module.exports = async function handler(req, res) {
 
         requestedDate:
           rawDate ||
-          formatDate(startDate),
+          formatDate(
+            startDate
+          ),
 
         attempts,
 
@@ -664,7 +640,6 @@ module.exports = async function handler(req, res) {
           startedAt
       });
     }
-
 
     /* =====================================================
        FINAL
@@ -680,25 +655,22 @@ module.exports = async function handler(req, res) {
     } =
       finalResult;
 
-
     const requestedBasDd =
       rawDate
-        ? rawDate.replace(
-            /-/g,
-            ""
-          )
+        ? rawDate
+            .replace(
+              /-/g,
+              ""
+            )
         : formatDate(
             startDate
           );
-
 
     const fallbackUsed =
       date !==
       requestedBasDd;
 
-
     const marketCount = {
-
       kospi:
         kospiStocks.length,
 
@@ -709,11 +681,8 @@ module.exports = async function handler(req, res) {
         stocks.length
     };
 
-
     const sources = {
-
       kospi: {
-
         market:
           "KOSPI",
 
@@ -735,9 +704,7 @@ module.exports = async function handler(req, res) {
           null
       },
 
-
       kosdaq: {
-
         market:
           "KOSDAQ",
 
@@ -760,19 +727,68 @@ module.exports = async function handler(req, res) {
       }
     };
 
+    /* =====================================================
+       V3 CACHE POLICY
 
-    res.setHeader(
-      "Cache-Control",
-      "public, s-maxage=1800, stale-while-revalidate=86400"
-    );
+       중요
+       -----------------------------------------------------
+       date가 오늘보다 과거라면
+       이미 확정된 KRX 데이터다.
 
+       → 30일 CDN CACHE
+
+       오늘 데이터는 장중 변경될 수 있다.
+
+       → 30분 CACHE
+
+       fallback으로 어제 데이터가 나온 경우에도
+       실제 반환 date 기준으로 판단한다.
+    ===================================================== */
+
+    const todayBasDd =
+      getKoreaToday();
+
+    const isHistorical =
+      date <
+      todayBasDd;
+
+    if (isHistorical) {
+      /*
+        과거 확정 데이터
+
+        30일 fresh cache
+        +
+        추가 30일 stale 허용
+      */
+
+      res.setHeader(
+        "Cache-Control",
+        "public, s-maxage=2592000, stale-while-revalidate=2592000"
+      );
+
+    } else {
+      /*
+        오늘 데이터
+
+        장중 데이터 갱신을 위해
+        기존보다 짧게 유지
+      */
+
+      res.setHeader(
+        "Cache-Control",
+        "public, s-maxage=1800, stale-while-revalidate=3600"
+      );
+    }
+
+    /* =====================================================
+       RESPONSE
+    ===================================================== */
 
     return res.status(200).json({
-
       ok: true,
 
       version:
-        "MARKET_SNAPSHOT_V2_AUTO_REFILL",
+        "MARKET_SNAPSHOT_V3_CACHED",
 
       date,
 
@@ -780,6 +796,14 @@ module.exports = async function handler(req, res) {
         requestedBasDd,
 
       fallbackUsed,
+
+      historical:
+        isHistorical,
+
+      cachePolicy:
+        isHistorical
+          ? "HISTORICAL_30D"
+          : "CURRENT_30M",
 
       partial:
         !kospiResult.ok ||
@@ -792,7 +816,6 @@ module.exports = async function handler(req, res) {
       stocks,
 
       performance: {
-
         elapsedMs:
           Date.now() -
           startedAt,
@@ -802,18 +825,26 @@ module.exports = async function handler(req, res) {
       }
     });
 
-
   } catch (error) {
-
     console.error(
-      "MARKET SNAPSHOT ERROR",
+      "MARKET SNAPSHOT V3 ERROR",
       error
     );
 
+    /*
+      서버 오류 캐시 방지
+    */
+
+    res.setHeader(
+      "Cache-Control",
+      "no-store"
+    );
 
     return res.status(500).json({
-
       ok: false,
+
+      version:
+        "MARKET_SNAPSHOT_V3_CACHED",
 
       error:
         String(
