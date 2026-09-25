@@ -1,20 +1,66 @@
 /* =========================================================
-   LEADER CYCLE - RANKINGS V13
-   60D CHART + MOVING AVERAGE ALIGNMENT
+   LEADER CYCLE - RANKINGS V13 ACTION ENGINE
 
-   기존 V12 STATIC HISTORY OBJECT FIX 유지
+   기존 V13 60D CHART 구조 유지
 
    추가 기능
    ---------------------------------------------------------
-   1. 최근 60거래일 차트
-   2. CLOSE / MA5 / MA10 / MA20 / MA40
-   3. 정배열 상태 자동 판정
-      PERFECT
-      BULLISH
-      FORMING
-      MIXED
-      BROKEN
-   4. 프론트 차트용 chart[] 반환
+   1. ACTION ENGINE
+
+      🟢 BUY ZONE
+      🔵 PULLBACK BUY
+      🟡 HOLD
+      🟠 NO CHASE
+      🔴 REDUCE
+      ⛔ EXIT
+
+   2. ACTION CONFIDENCE
+
+   3. ACTION REASONS
+
+   4. ATR 기반 가격 영역
+
+      buyZone.low
+      buyZone.high
+      chasePrice
+      trendStop
+
+   5. RISK
+
+      LOW
+      NORMAL
+      HIGH
+      EXTREME
+
+   핵심 원칙
+   ---------------------------------------------------------
+   ENTRY 점수 ≠ 최종 매수판정
+
+   우선순위:
+
+   추세 붕괴
+      ↓
+   EXIT
+
+   추세 약화 / 소진
+      ↓
+   REDUCE
+
+   과열 / 과도한 이격
+      ↓
+   NO CHASE
+
+   정배열 눌림
+      ↓
+   PULLBACK BUY
+
+   초기 주도 + 돌파 + 거래에너지
+      ↓
+   BUY ZONE
+
+   그 외 상승 추세
+      ↓
+   HOLD
 ========================================================= */
 
 const fs = require("fs");
@@ -241,13 +287,8 @@ module.exports = async function handler(req, res) {
 
           return {
             json,
-
-            source:
-              "filesystem",
-
-            location:
-              candidate,
-
+            source: "filesystem",
+            location: candidate,
             checkedPaths
           };
 
@@ -272,13 +313,8 @@ module.exports = async function handler(req, res) {
 
         return {
           json,
-
-          source:
-            "http",
-
-          location:
-            historyUrl,
-
+          source: "http",
+          location: historyUrl,
           checkedPaths
         };
 
@@ -440,7 +476,7 @@ module.exports = async function handler(req, res) {
 
     /* =====================================================
        PARSER 1
-       ACTUAL STATIC HISTORY FORMAT
+       STATIC STOCK OBJECT
     ===================================================== */
 
     function parseStockObject(obj) {
@@ -466,17 +502,6 @@ module.exports = async function handler(req, res) {
           continue;
         }
 
-        /*
-          현재 구조:
-
-          "005930": {
-            code,
-            name,
-            market,
-            history: [...]
-          }
-        */
-
         if (
           stock &&
           typeof stock === "object" &&
@@ -495,12 +520,6 @@ module.exports = async function handler(req, res) {
 
           continue;
         }
-
-        /*
-          구형 구조:
-
-          "005930": [...]
-        */
 
         if (Array.isArray(stock)) {
           for (
@@ -712,9 +731,6 @@ module.exports = async function handler(req, res) {
 
     /* =====================================================
        SORT + DEDUP
-
-       분석 엔진에서는
-       과거 → 최신 순서
     ===================================================== */
 
     let totalHistoryRows = 0;
@@ -867,7 +883,7 @@ module.exports = async function handler(req, res) {
         .slice(0, 80);
 
     /* =====================================================
-       MOVING AVERAGE HELPER FOR CHART
+       MOVING AVERAGE HELPER
     ===================================================== */
 
     function movingAverageAt(
@@ -907,6 +923,156 @@ module.exports = async function handler(req, res) {
       return round(
         average(values)
       );
+    }
+
+    /* =====================================================
+       ATR HELPER
+
+       14일 Average True Range
+
+       TR =
+       max(
+         HIGH - LOW,
+         |HIGH - PREV CLOSE|,
+         |LOW - PREV CLOSE|
+       )
+    ===================================================== */
+
+    function calculateATR(
+      rows,
+      period = 14
+    ) {
+      if (
+        !Array.isArray(rows) ||
+        rows.length < 2
+      ) {
+        return 0;
+      }
+
+      const trueRanges = [];
+
+      for (
+        let i = 1;
+        i < rows.length;
+        i++
+      ) {
+        const high =
+          num(rows[i].high);
+
+        const low =
+          num(rows[i].low);
+
+        const prevClose =
+          num(
+            rows[i - 1].close
+          );
+
+        if (
+          high <= 0 ||
+          low <= 0 ||
+          prevClose <= 0
+        ) {
+          continue;
+        }
+
+        const tr =
+          Math.max(
+            high - low,
+            Math.abs(
+              high -
+              prevClose
+            ),
+            Math.abs(
+              low -
+              prevClose
+            )
+          );
+
+        if (
+          Number.isFinite(tr) &&
+          tr >= 0
+        ) {
+          trueRanges.push(tr);
+        }
+      }
+
+      if (!trueRanges.length) {
+        return 0;
+      }
+
+      return average(
+        trueRanges.slice(
+          -period
+        )
+      );
+    }
+
+    /* =====================================================
+       PRICE ROUNDING
+
+       KRX 호가단위를 완전히 재현하려는 목적이 아니라
+       투자 판단용 가격 영역을 보기 좋게 표시하기 위한
+       안전한 가격 라운딩.
+    ===================================================== */
+
+    function priceRound(value) {
+      const price =
+        Math.max(
+          0,
+          num(value)
+        );
+
+      if (
+        price >= 500000
+      ) {
+        return (
+          Math.round(
+            price / 1000
+          ) * 1000
+        );
+      }
+
+      if (
+        price >= 100000
+      ) {
+        return (
+          Math.round(
+            price / 500
+          ) * 500
+        );
+      }
+
+      if (
+        price >= 50000
+      ) {
+        return (
+          Math.round(
+            price / 100
+          ) * 100
+        );
+      }
+
+      if (
+        price >= 10000
+      ) {
+        return (
+          Math.round(
+            price / 50
+          ) * 50
+        );
+      }
+
+      if (
+        price >= 5000
+      ) {
+        return (
+          Math.round(
+            price / 10
+          ) * 10
+        );
+      }
+
+      return Math.round(price);
     }
 
     /* =====================================================
@@ -1005,13 +1171,6 @@ module.exports = async function handler(req, res) {
 
       /* ===================================================
          60 DAY CHART
-
-         history 최대 105일을 사용해서
-         MA40을 먼저 계산한 뒤
-         마지막 60일만 전달.
-
-         따라서 차트 첫날부터도
-         가능한 경우 MA40 표시 가능.
       =================================================== */
 
       const chartSource =
@@ -1063,21 +1222,6 @@ module.exports = async function handler(req, res) {
 
       /* ===================================================
          ALIGNMENT STATUS
-
-         PERFECT
-         현재가 > MA5 > MA10 > MA20 > MA40
-
-         BULLISH
-         MA5 > MA10 > MA20 > MA40
-
-         FORMING
-         단기선이 장기선 위로 올라오는 중
-
-         BROKEN
-         현재가 MA20 아래 + MA5 < MA10
-
-         MIXED
-         나머지
       =================================================== */
 
       let alignment =
@@ -1248,6 +1392,24 @@ module.exports = async function handler(req, res) {
               (high20 - low20)
             ) * 100
           : 50;
+
+      /* ===================================================
+         ATR
+      =================================================== */
+
+      const atr =
+        calculateATR(
+          history.slice(-30),
+          14
+        );
+
+      const atrPct =
+        current > 0
+          ? (
+              atr /
+              current
+            ) * 100
+          : 0;
 
       /* ===================================================
          TREND SCORE
@@ -1491,6 +1653,933 @@ module.exports = async function handler(req, res) {
         );
 
       /* ===================================================
+         ACTION PRICE ENGINE
+      =================================================== */
+
+      /*
+        변동성 안전장치.
+
+        일부 종목의 ATR 데이터가 부족하거나
+        비정상적으로 작을 경우 현재가의 1.5%를
+        최소 변동폭으로 사용.
+      */
+
+      const effectiveATR =
+        Math.max(
+          atr,
+          current * 0.015
+        );
+
+      /*
+        눌림 관심 영역의 중심.
+
+        강한 상승추세에서는 MA5~MA10 부근을
+        우선적인 관심 영역으로 사용한다.
+
+        추세가 아직 형성중이면 MA10 비중을 높인다.
+      */
+
+      let buyCenter;
+
+      if (
+        alignment === "PERFECT" ||
+        alignment === "BULLISH"
+      ) {
+        buyCenter =
+          ma5 * 0.45 +
+          ma10 * 0.55;
+
+      } else {
+        buyCenter =
+          ma10 * 0.4 +
+          ma20 * 0.6;
+      }
+
+      /*
+        BUY ZONE 폭.
+
+        ATR을 사용하여 종목별 변동성 차이를 반영.
+      */
+
+      let buyZoneLow =
+        buyCenter -
+        effectiveATR * 0.55;
+
+      let buyZoneHigh =
+        buyCenter +
+        effectiveATR * 0.35;
+
+      /*
+        강한 돌파 초기 종목은
+        과거 고점 자체도 매수 관심 기준이 된다.
+      */
+
+      if (
+        breakoutPct >= -1 &&
+        breakoutPct <= 4 &&
+        (
+          alignment === "PERFECT" ||
+          alignment === "BULLISH"
+        )
+      ) {
+        const breakoutZoneLow =
+          high20 -
+          effectiveATR * 0.35;
+
+        const breakoutZoneHigh =
+          high20 +
+          effectiveATR * 0.45;
+
+        buyZoneLow =
+          Math.max(
+            buyZoneLow,
+            breakoutZoneLow
+          );
+
+        buyZoneHigh =
+          Math.max(
+            buyZoneHigh,
+            breakoutZoneHigh
+          );
+      }
+
+      /*
+        잘못된 역전 방지
+      */
+
+      if (
+        buyZoneLow >
+        buyZoneHigh
+      ) {
+        const temp =
+          buyZoneLow;
+
+        buyZoneLow =
+          buyZoneHigh;
+
+        buyZoneHigh =
+          temp;
+      }
+
+      /*
+        추격주의 가격.
+
+        20일 고점 + ATR 또는
+        MA20 이격이 과열권에 진입하는 가격 중
+        현실적인 상단값 사용.
+      */
+
+      const chaseFromBreakout =
+        high20 +
+        effectiveATR * 1.15;
+
+      const chaseFromMa20 =
+        ma20 * 1.10;
+
+      let chasePrice =
+        Math.max(
+          chaseFromBreakout,
+          chaseFromMa20
+        );
+
+      /*
+        추세 방어선.
+
+        MA20과 최근 변동성을 함께 사용.
+
+        지나치게 촘촘한 stop을 피하기 위해
+        MA20 - 0.8 ATR.
+      */
+
+      let trendStop =
+        ma20 -
+        effectiveATR * 0.8;
+
+      /*
+        MA40이 존재하고
+        MA20과 매우 가까우면
+        장기 추세 구조도 고려.
+      */
+
+      if (
+        ma40 > 0 &&
+        ma40 < ma20 &&
+        (
+          ma20 - ma40
+        ) <
+        effectiveATR
+      ) {
+        trendStop =
+          Math.min(
+            trendStop,
+            ma40 -
+            effectiveATR * 0.25
+          );
+      }
+
+      buyZoneLow =
+        priceRound(
+          Math.max(
+            buyZoneLow,
+            1
+          )
+        );
+
+      buyZoneHigh =
+        priceRound(
+          Math.max(
+            buyZoneHigh,
+            buyZoneLow
+          )
+        );
+
+      chasePrice =
+        priceRound(
+          Math.max(
+            chasePrice,
+            current
+          )
+        );
+
+      trendStop =
+        priceRound(
+          Math.max(
+            trendStop,
+            1
+          )
+        );
+
+      /* ===================================================
+         ACTION CONDITIONS
+      =================================================== */
+
+      const trendBroken =
+        alignment === "BROKEN" ||
+        (
+          current < ma20 &&
+          ma5 < ma10 &&
+          ma10 <= ma20
+        );
+
+      const severeTrendBroken =
+        (
+          current <
+          ma20 -
+          effectiveATR * 0.5
+        ) &&
+        ma5 < ma10;
+
+      const trendWeakening =
+        !trendBroken &&
+        (
+          current < ma10 ||
+          ma5 < ma10 ||
+          exhaustionScore >= 65
+        );
+
+      /*
+        과열 조건.
+
+        ENTRY가 아무리 높아도
+        아래 조건이면 신규 추격매수를 제한.
+      */
+
+      const extremeOverheat =
+        distanceMa20 >= 15 ||
+        return5 >= 20 ||
+        overheatScore >= 70;
+
+      const overheat =
+        distanceMa20 >= 10 ||
+        return5 >= 15 ||
+        overheatScore >= 45 ||
+        current >= chasePrice;
+
+      /*
+        돌파.
+
+        고점 바로 아래 -0.5%까지도
+        실전에서는 돌파 시도 구간으로 인정.
+      */
+
+      const breakout =
+        breakoutPct >= -0.5 &&
+        rangePosition >= 90;
+
+      const strongBreakout =
+        breakoutPct >= 0 &&
+        rangePosition >= 95;
+
+      /*
+        거래 에너지.
+      */
+
+      const energyHealthy =
+        valueRatio >= 1.15 ||
+        volumeRatio >= 1.20;
+
+      const energyStrong =
+        valueRatio >= 1.5 ||
+        volumeRatio >= 1.5;
+
+      /*
+        상승 추세.
+      */
+
+      const bullishTrend =
+        alignment === "PERFECT" ||
+        alignment === "BULLISH";
+
+      const trendForming =
+        alignment === "FORMING";
+
+      /*
+        눌림 조건.
+
+        현재가가 MA5 / MA10 근처로 내려왔지만
+        MA20 위 상승 구조를 유지.
+      */
+
+      const distanceMa5 =
+        ma5 > 0
+          ? (
+              current / ma5 -
+              1
+            ) * 100
+          : 0;
+
+      const distanceMa10 =
+        ma10 > 0
+          ? (
+              current / ma10 -
+              1
+            ) * 100
+          : 0;
+
+      const nearShortMA =
+        (
+          Math.abs(
+            distanceMa5
+          ) <=
+          Math.max(
+            3,
+            atrPct * 1.2
+          )
+        ) ||
+        (
+          Math.abs(
+            distanceMa10
+          ) <=
+          Math.max(
+            3,
+            atrPct * 1.2
+          )
+        );
+
+      const pullback =
+        bullishTrend &&
+        current > ma20 &&
+        nearShortMA &&
+        return5 < 12 &&
+        distanceMa20 < 10;
+
+      /*
+        BUY ZONE은 단순 ENTRY 점수 기준이 아니다.
+
+        추세 + 돌파 + 에너지 + 과열 부재가
+        동시에 확인되어야 한다.
+      */
+
+      const buyZoneCandidate =
+        (
+          bullishTrend ||
+          trendForming
+        ) &&
+        breakout &&
+        energyHealthy &&
+        entryScore >= 55 &&
+        overheatScore < 45 &&
+        distanceMa20 < 10 &&
+        return5 < 15;
+
+      const strongBuyZone =
+        bullishTrend &&
+        strongBreakout &&
+        energyStrong &&
+        entryScore >= 65 &&
+        overheatScore < 40 &&
+        distanceMa20 < 8 &&
+        return5 < 12;
+
+      const pullbackCandidate =
+        pullback &&
+        valueRatio >= 0.75 &&
+        entryScore >= 45 &&
+        exhaustionScore < 55;
+
+      /* ===================================================
+         ACTION SIGNAL
+      =================================================== */
+
+      let actionSignal =
+        "HOLD";
+
+      /*
+        우선순위 1
+        EXIT
+      */
+
+      if (
+        severeTrendBroken ||
+        (
+          trendBroken &&
+          current < ma20
+        )
+      ) {
+        actionSignal =
+          "EXIT";
+
+      /*
+        우선순위 2
+        REDUCE
+      */
+
+      } else if (
+        trendWeakening &&
+        (
+          exhaustionScore >= 60 ||
+          current < ma10
+        )
+      ) {
+        actionSignal =
+          "REDUCE";
+
+      /*
+        우선순위 3
+        NO CHASE
+
+        ENTRY가 90이어도
+        과열이면 여기서 차단.
+      */
+
+      } else if (
+        extremeOverheat ||
+        (
+          overheat &&
+          bullishTrend
+        )
+      ) {
+        actionSignal =
+          "NO_CHASE";
+
+      /*
+        우선순위 4
+        PULLBACK BUY
+      */
+
+      } else if (
+        pullbackCandidate
+      ) {
+        actionSignal =
+          "PULLBACK_BUY";
+
+      /*
+        우선순위 5
+        BUY ZONE
+      */
+
+      } else if (
+        buyZoneCandidate ||
+        strongBuyZone
+      ) {
+        actionSignal =
+          "BUY_ZONE";
+
+      /*
+        나머지
+        HOLD
+      */
+
+      } else {
+        actionSignal =
+          "HOLD";
+      }
+
+      /* ===================================================
+         ACTION LABEL
+      =================================================== */
+
+      const actionLabels = {
+        BUY_ZONE:
+          "🟢 BUY ZONE",
+
+        PULLBACK_BUY:
+          "🔵 PULLBACK BUY",
+
+        HOLD:
+          "🟡 HOLD",
+
+        NO_CHASE:
+          "🟠 NO CHASE",
+
+        REDUCE:
+          "🔴 REDUCE",
+
+        EXIT:
+          "⛔ EXIT"
+      };
+
+      /* ===================================================
+         RISK
+      =================================================== */
+
+      let risk =
+        "NORMAL";
+
+      if (
+        extremeOverheat ||
+        severeTrendBroken ||
+        exhaustionScore >= 80
+      ) {
+        risk =
+          "EXTREME";
+
+      } else if (
+        overheat ||
+        trendBroken ||
+        exhaustionScore >= 60
+      ) {
+        risk =
+          "HIGH";
+
+      } else if (
+        bullishTrend &&
+        overheatScore < 20 &&
+        exhaustionScore < 25 &&
+        atrPct < 5
+      ) {
+        risk =
+          "LOW";
+      }
+
+      /* ===================================================
+         CONFIDENCE ENGINE
+
+         ENTRY 점수와 별개.
+
+         신호를 구성하는 조건들이
+         서로 얼마나 같은 방향을 가리키는지 측정.
+      =================================================== */
+
+      let confidence = 50;
+
+      if (
+        alignment === "PERFECT"
+      ) {
+        confidence += 14;
+
+      } else if (
+        alignment === "BULLISH"
+      ) {
+        confidence += 10;
+
+      } else if (
+        alignment === "FORMING"
+      ) {
+        confidence += 5;
+
+      } else if (
+        alignment === "BROKEN"
+      ) {
+        confidence +=
+          actionSignal === "EXIT"
+            ? 15
+            : -10;
+      }
+
+      /*
+        각 ACTION과 실제 데이터의 일치도
+      */
+
+      if (
+        actionSignal === "BUY_ZONE"
+      ) {
+        if (breakout) {
+          confidence += 10;
+        }
+
+        if (energyHealthy) {
+          confidence += 10;
+        }
+
+        if (strongBreakout) {
+          confidence += 5;
+        }
+
+        if (energyStrong) {
+          confidence += 5;
+        }
+
+        if (
+          overheatScore < 20
+        ) {
+          confidence += 5;
+        }
+
+        if (
+          exhaustionScore > 45
+        ) {
+          confidence -= 10;
+        }
+      }
+
+      if (
+        actionSignal ===
+        "PULLBACK_BUY"
+      ) {
+        if (pullback) {
+          confidence += 15;
+        }
+
+        if (
+          valueRatio >= 1
+        ) {
+          confidence += 8;
+        }
+
+        if (
+          current > ma20
+        ) {
+          confidence += 7;
+        }
+
+        if (
+          exhaustionScore < 35
+        ) {
+          confidence += 5;
+        }
+      }
+
+      if (
+        actionSignal ===
+        "NO_CHASE"
+      ) {
+        if (overheat) {
+          confidence += 12;
+        }
+
+        if (
+          extremeOverheat
+        ) {
+          confidence += 12;
+        }
+
+        if (
+          distanceMa20 >= 15
+        ) {
+          confidence += 5;
+        }
+
+        if (
+          return5 >= 20
+        ) {
+          confidence += 5;
+        }
+      }
+
+      if (
+        actionSignal ===
+        "REDUCE"
+      ) {
+        if (
+          trendWeakening
+        ) {
+          confidence += 12;
+        }
+
+        if (
+          exhaustionScore >= 60
+        ) {
+          confidence += 10;
+        }
+
+        if (
+          current < ma10
+        ) {
+          confidence += 8;
+        }
+      }
+
+      if (
+        actionSignal === "EXIT"
+      ) {
+        if (
+          trendBroken
+        ) {
+          confidence += 12;
+        }
+
+        if (
+          severeTrendBroken
+        ) {
+          confidence += 15;
+        }
+
+        if (
+          current < ma20
+        ) {
+          confidence += 8;
+        }
+      }
+
+      if (
+        actionSignal === "HOLD"
+      ) {
+        if (
+          current > ma20
+        ) {
+          confidence += 8;
+        }
+
+        if (
+          alignment !== "BROKEN"
+        ) {
+          confidence += 5;
+        }
+
+        /*
+          HOLD는 적극적 매매신호보다
+          본질적으로 확신도를 조금 낮춘다.
+        */
+
+        confidence -= 5;
+      }
+
+      confidence =
+        Math.round(
+          clamp(
+            confidence,
+            40,
+            98
+          )
+        );
+
+      /* ===================================================
+         ACTION REASONS
+      =================================================== */
+
+      const reasons = [];
+
+      if (
+        alignment === "PERFECT"
+      ) {
+        reasons.push(
+          "완전 정배열"
+        );
+
+      } else if (
+        alignment === "BULLISH"
+      ) {
+        reasons.push(
+          "상승 정배열"
+        );
+
+      } else if (
+        alignment === "FORMING"
+      ) {
+        reasons.push(
+          "정배열 형성중"
+        );
+
+      } else if (
+        alignment === "BROKEN"
+      ) {
+        reasons.push(
+          "단기 추세 붕괴"
+        );
+      }
+
+      if (
+        strongBreakout
+      ) {
+        reasons.push(
+          "20일 고점 돌파"
+        );
+
+      } else if (
+        breakout
+      ) {
+        reasons.push(
+          "20일 고점 돌파 시도"
+        );
+      }
+
+      if (
+        valueRatio >= 1.5
+      ) {
+        reasons.push(
+          `거래대금 ${round(
+            valueRatio,
+            1
+          )}x 증가`
+        );
+
+      } else if (
+        valueRatio >= 1.15
+      ) {
+        reasons.push(
+          "거래대금 증가"
+        );
+      }
+
+      if (
+        volumeRatio >= 1.5
+      ) {
+        reasons.push(
+          `거래량 ${round(
+            volumeRatio,
+            1
+          )}x 증가`
+        );
+      }
+
+      if (
+        pullbackCandidate
+      ) {
+        reasons.push(
+          "MA5·MA10 눌림 구간"
+        );
+      }
+
+      if (
+        current > ma20 &&
+        actionSignal ===
+          "PULLBACK_BUY"
+      ) {
+        reasons.push(
+          "MA20 상승추세 유지"
+        );
+      }
+
+      if (
+        overheatScore < 20 &&
+        (
+          actionSignal ===
+            "BUY_ZONE" ||
+          actionSignal ===
+            "PULLBACK_BUY"
+        )
+      ) {
+        reasons.push(
+          "단기 과열 낮음"
+        );
+      }
+
+      if (
+        distanceMa20 >= 10
+      ) {
+        reasons.push(
+          `MA20 이격 +${round(
+            distanceMa20,
+            1
+          )}%`
+        );
+      }
+
+      if (
+        return5 >= 15
+      ) {
+        reasons.push(
+          `5일 +${round(
+            return5,
+            1
+          )}% 급등`
+        );
+      }
+
+      if (
+        exhaustionScore >= 60
+      ) {
+        reasons.push(
+          "상승 에너지 소진 위험"
+        );
+      }
+
+      if (
+        current < ma10
+      ) {
+        reasons.push(
+          "MA10 하향 이탈"
+        );
+      }
+
+      if (
+        current < ma20
+      ) {
+        reasons.push(
+          "MA20 추세선 이탈"
+        );
+      }
+
+      /*
+        이유가 너무 많으면
+        UI 가독성이 떨어지므로
+        핵심 5개까지만 전달.
+      */
+
+      const finalReasons =
+        reasons.slice(0, 5);
+
+      if (
+        !finalReasons.length
+      ) {
+        if (
+          actionSignal === "HOLD"
+        ) {
+          finalReasons.push(
+            "추세 확인 구간"
+          );
+        } else {
+          finalReasons.push(
+            "복합 기술 신호"
+          );
+        }
+      }
+
+      /* ===================================================
+         ACTION OBJECT
+      =================================================== */
+
+      const action = {
+        signal:
+          actionSignal,
+
+        label:
+          actionLabels[
+            actionSignal
+          ],
+
+        confidence,
+
+        reasons:
+          finalReasons,
+
+        buyZone: {
+          low:
+            buyZoneLow,
+
+          high:
+            buyZoneHigh
+        },
+
+        chasePrice,
+
+        trendStop,
+
+        risk
+      };
+
+      /* ===================================================
          RESULT
       =================================================== */
 
@@ -1528,13 +2617,11 @@ module.exports = async function handler(req, res) {
         discoveryScore:
           stock.discoveryScore,
 
-        /* -----------------------------------------------
-           정배열 정보
-        ----------------------------------------------- */
-
         alignment,
 
         alignmentLabel,
+
+        action,
 
         scores: {
           entry:
@@ -1612,12 +2699,23 @@ module.exports = async function handler(req, res) {
           tradingValueRatio:
             round(
               valueRatio
+            ),
+
+          atr14:
+            round(
+              atr
+            ),
+
+          atrPct:
+            round(
+              atrPct
+            ),
+
+          overheat:
+            round(
+              overheatScore
             )
         },
-
-        /* -----------------------------------------------
-           프론트 60일 차트
-        ----------------------------------------------- */
 
         chart
       });
@@ -1673,6 +2771,89 @@ module.exports = async function handler(req, res) {
       );
 
     /* =====================================================
+       ACTION RANKINGS
+
+       BUY 계열은 confidence + ENTRY를 함께 고려.
+
+       위험 계열은 confidence + exhaustion을 고려.
+    ===================================================== */
+
+    function makeActionRanking(
+      signal,
+      limit = 20
+    ) {
+      return analyzed
+        .filter(
+          stock =>
+            stock.action.signal ===
+            signal
+        )
+        .slice()
+        .sort(
+          (a, b) => {
+            const aScore =
+              a.action.confidence *
+                0.6 +
+              a.scores.entry *
+                0.4;
+
+            const bScore =
+              b.action.confidence *
+                0.6 +
+              b.scores.entry *
+                0.4;
+
+            return (
+              bScore -
+              aScore
+            );
+          }
+        )
+        .slice(
+          0,
+          limit
+        )
+        .map(
+          (stock, index) => ({
+            rank:
+              index + 1,
+
+            ...stock
+          })
+        );
+    }
+
+    const buyZoneRanking =
+      makeActionRanking(
+        "BUY_ZONE"
+      );
+
+    const pullbackBuyRanking =
+      makeActionRanking(
+        "PULLBACK_BUY"
+      );
+
+    const holdRanking =
+      makeActionRanking(
+        "HOLD"
+      );
+
+    const noChaseRanking =
+      makeActionRanking(
+        "NO_CHASE"
+      );
+
+    const reduceRanking =
+      makeActionRanking(
+        "REDUCE"
+      );
+
+    const exitRanking =
+      makeActionRanking(
+        "EXIT"
+      );
+
+    /* =====================================================
        DIAGNOSTIC
     ===================================================== */
 
@@ -1710,7 +2891,7 @@ module.exports = async function handler(req, res) {
       ).length;
 
     /* =====================================================
-       ALIGNMENT DIAGNOSTIC
+       ALIGNMENT STATS
     ===================================================== */
 
     const alignmentStats = {
@@ -1751,6 +2932,54 @@ module.exports = async function handler(req, res) {
     };
 
     /* =====================================================
+       ACTION BOARD
+    ===================================================== */
+
+    const actionStats = {
+      BUY_ZONE:
+        analyzed.filter(
+          stock =>
+            stock.action.signal ===
+            "BUY_ZONE"
+        ).length,
+
+      PULLBACK_BUY:
+        analyzed.filter(
+          stock =>
+            stock.action.signal ===
+            "PULLBACK_BUY"
+        ).length,
+
+      HOLD:
+        analyzed.filter(
+          stock =>
+            stock.action.signal ===
+            "HOLD"
+        ).length,
+
+      NO_CHASE:
+        analyzed.filter(
+          stock =>
+            stock.action.signal ===
+            "NO_CHASE"
+        ).length,
+
+      REDUCE:
+        analyzed.filter(
+          stock =>
+            stock.action.signal ===
+            "REDUCE"
+        ).length,
+
+      EXIT:
+        analyzed.filter(
+          stock =>
+            stock.action.signal ===
+            "EXIT"
+        ).length
+    };
+
+    /* =====================================================
        RESPONSE
     ===================================================== */
 
@@ -1761,13 +2990,13 @@ module.exports = async function handler(req, res) {
           true,
 
         version:
-          "LEADER_CYCLE_RANKINGS_V13_60D_CHART",
+          "LEADER_CYCLE_RANKINGS_V13_ACTION_ENGINE",
 
         date:
           snapshot.date,
 
         architecture:
-          "MARKET_SNAPSHOT + STATIC_HISTORY + 60D_MA_CHART",
+          "MARKET_SNAPSHOT + STATIC_HISTORY + 60D_MA_CHART + ACTION_ENGINE",
 
         chartConfig: {
           days:
@@ -1783,6 +3012,32 @@ module.exports = async function handler(req, res) {
 
           alignmentOrder:
             "PRICE > MA5 > MA10 > MA20 > MA40"
+        },
+
+        actionConfig: {
+          signals: [
+            "BUY_ZONE",
+            "PULLBACK_BUY",
+            "HOLD",
+            "NO_CHASE",
+            "REDUCE",
+            "EXIT"
+          ],
+
+          priority: [
+            "EXIT",
+            "REDUCE",
+            "NO_CHASE",
+            "PULLBACK_BUY",
+            "BUY_ZONE",
+            "HOLD"
+          ],
+
+          priceEngine:
+            "MA5 + MA10 + MA20 + 20D_HIGH + ATR14",
+
+          confidence:
+            "SIGNAL_CONFLUENCE"
         },
 
         historyMeta: {
@@ -1832,6 +3087,8 @@ module.exports = async function handler(req, res) {
 
         alignmentStats,
 
+        actionStats,
+
         performance: {
           elapsedMs:
             Date.now() -
@@ -1876,7 +3133,35 @@ module.exports = async function handler(req, res) {
 
           exhaustion:
             exhaustionRanking[0] ||
+            null,
+
+          buyZone:
+            buyZoneRanking[0] ||
+            null,
+
+          pullbackBuy:
+            pullbackBuyRanking[0] ||
             null
+        },
+
+        actionBoard: {
+          buyZone:
+            buyZoneRanking,
+
+          pullbackBuy:
+            pullbackBuyRanking,
+
+          hold:
+            holdRanking,
+
+          noChase:
+            noChaseRanking,
+
+          reduce:
+            reduceRanking,
+
+          exit:
+            exitRanking
         },
 
         entryRanking,
@@ -1896,7 +3181,7 @@ module.exports = async function handler(req, res) {
 
   } catch (error) {
     console.error(
-      "RANKINGS V13 ERROR",
+      "RANKINGS V13 ACTION ENGINE ERROR",
       error
     );
 
@@ -1907,7 +3192,7 @@ module.exports = async function handler(req, res) {
           false,
 
         version:
-          "LEADER_CYCLE_RANKINGS_V13_60D_CHART",
+          "LEADER_CYCLE_RANKINGS_V13_ACTION_ENGINE",
 
         error:
           String(
