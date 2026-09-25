@@ -1,5 +1,7 @@
 /* =========================================================
-   LEADER CYCLE - SECTOR SCANNER V2
+   LEADER CYCLE - SECTOR SCANNER V3
+
+   HAN + EARLY + SECTOR EXHAUSTION
 
    목적
    ---------------------------------------------------------
@@ -7,9 +9,9 @@
    2. sector-map 분류
    3. 종목수 Coverage + 거래대금 Coverage 계산
    4. 섹터 Breadth / Momentum / Liquidity 계산
-   5. HAN / EARLY 점수 계산
-   6. LEADER / EMERGING / WATCH / MATURE 분류
-   7. 현재 주도섹터 + 차기 주도섹터 후보 반환
+   5. HAN / EARLY / EXHAUSTION 점수 계산
+   6. LEADER / EMERGING / WATCH / MATURE / WEAK 분류
+   7. 현재 주도섹터 + 차기 주도섹터 + 공세종료 위험 반환
 
    IMPORTANT
    ---------------------------------------------------------
@@ -143,8 +145,10 @@ module.exports = async function handler(req, res) {
 
       return res.status(500).json({
         ok: false,
-        version: "SECTOR_SCAN_V2",
-        error: "host 정보를 확인할 수 없습니다."
+        version:
+          "SECTOR_SCAN_V3_HAN_EARLY_EXHAUSTION",
+        error:
+          "host 정보를 확인할 수 없습니다."
       });
     }
 
@@ -191,7 +195,8 @@ module.exports = async function handler(req, res) {
           snapshotUrl,
           {
             headers: {
-              Accept: "application/json"
+              Accept:
+                "application/json"
             }
           }
         );
@@ -203,7 +208,7 @@ module.exports = async function handler(req, res) {
         ok: false,
 
         version:
-          "SECTOR_SCAN_V2",
+          "SECTOR_SCAN_V3_HAN_EARLY_EXHAUSTION",
 
         error:
           "market-snapshot 호출 실패",
@@ -231,7 +236,7 @@ module.exports = async function handler(req, res) {
         ok: false,
 
         version:
-          "SECTOR_SCAN_V2",
+          "SECTOR_SCAN_V3_HAN_EARLY_EXHAUSTION",
 
         error:
           "market-snapshot JSON 파싱 실패",
@@ -253,7 +258,7 @@ module.exports = async function handler(req, res) {
         ok: false,
 
         version:
-          "SECTOR_SCAN_V2",
+          "SECTOR_SCAN_V3_HAN_EARLY_EXHAUSTION",
 
         error:
           "market-snapshot 응답 실패",
@@ -369,7 +374,7 @@ module.exports = async function handler(req, res) {
         ok: false,
 
         version:
-          "SECTOR_SCAN_V2",
+          "SECTOR_SCAN_V3_HAN_EARLY_EXHAUSTION",
 
         error:
           "사용 가능한 시장 종목이 없습니다.",
@@ -603,8 +608,6 @@ module.exports = async function handler(req, res) {
 
       /* ===================================================
          LEADERS
-
-         거래대금 중심
       =================================================== */
 
       const leaders =
@@ -712,17 +715,16 @@ module.exports = async function handler(req, res) {
        -----------------------------------------------------
        현재 주도력
 
-       Breadth     30
-       Momentum    30
-       Liquidity   40
-
        EARLY
        -----------------------------------------------------
        초기 확산 가능성
 
-       Breadth     35
-       Momentum    40
-       Liquidity   25
+       EXHAUSTION
+       -----------------------------------------------------
+       공세 종료 / 분배 위험
+
+       V1은 당일 snapshot 기반.
+       향후 history 기반으로 V2 고도화 가능.
     ===================================================== */
 
     for (
@@ -741,9 +743,6 @@ module.exports = async function handler(req, res) {
 
       /* ---------------------------------------------------
          MOMENTUM
-
-         평균 등락률 +5% 이상이면
-         거의 최대점수.
       --------------------------------------------------- */
 
       const momentumScore =
@@ -759,9 +758,6 @@ module.exports = async function handler(req, res) {
 
       /* ---------------------------------------------------
          LIQUIDITY
-
-         전체 시장 거래대금의
-         10% 차지하면 최대점수.
       --------------------------------------------------- */
 
       const liquidityScore =
@@ -798,10 +794,6 @@ module.exports = async function handler(req, res) {
 
       /* ---------------------------------------------------
          EARLY SCORE
-
-         거래대금 독점보다는
-         상승 확산 + 가격 움직임을
-         더 중요하게 본다.
       --------------------------------------------------- */
 
       const earlyScore =
@@ -822,6 +814,109 @@ module.exports = async function handler(req, res) {
         );
 
 
+      /* ===================================================
+         EXHAUSTION ENGINE
+
+         핵심 아이디어
+
+         단순히 약한 섹터가 아니라
+
+         "거래대금/주도력이 있었는데
+          내부 확산과 모멘텀이 약해지는 섹터"
+
+         를 잡는다.
+      =================================================== */
+
+
+      /* ---------------------------------------------------
+         BREADTH WEAKNESS
+
+         상승 종목 비율이 낮을수록 증가
+      --------------------------------------------------- */
+
+      const breadthWeakness =
+        clamp(
+          100 -
+          sector.advanceRatio
+        );
+
+
+      /* ---------------------------------------------------
+         MOMENTUM WEAKNESS
+
+         현재 가격 모멘텀이 낮을수록 증가
+      --------------------------------------------------- */
+
+      const momentumWeakness =
+        clamp(
+          100 -
+          momentumScore
+        );
+
+
+      /* ---------------------------------------------------
+         DISTRIBUTION
+
+         거래대금은 몰려있는데
+         상승 확산이 약한 경우
+
+         분배 가능성을 높게 본다.
+      --------------------------------------------------- */
+
+      const distributionScore =
+        clamp(
+
+          liquidityScore *
+
+          (
+            breadthWeakness /
+            100
+          )
+        );
+
+
+      /* ---------------------------------------------------
+         EXHAUSTION SCORE
+
+         HAN              20%
+         LIQUIDITY        20%
+         BREADTH WEAK     25%
+         MOMENTUM WEAK    20%
+         DISTRIBUTION     15%
+      --------------------------------------------------- */
+
+      const exhaustionScore =
+        clamp(
+
+          hanScore *
+          0.20
+
+          +
+
+          liquidityScore *
+          0.20
+
+          +
+
+          breadthWeakness *
+          0.25
+
+          +
+
+          momentumWeakness *
+          0.20
+
+          +
+
+          distributionScore *
+          0.15
+        );
+
+
+      /* ===================================================
+         SCORES
+      =================================================== */
+
       sector.scores = {
 
         han:
@@ -832,6 +927,11 @@ module.exports = async function handler(req, res) {
         early:
           Math.round(
             earlyScore
+          ),
+
+        exhaustion:
+          Math.round(
+            exhaustionScore
           ),
 
         breadth:
@@ -847,6 +947,21 @@ module.exports = async function handler(req, res) {
         liquidity:
           Math.round(
             liquidityScore
+          ),
+
+        breadthWeakness:
+          Math.round(
+            breadthWeakness
+          ),
+
+        momentumWeakness:
+          Math.round(
+            momentumWeakness
+          ),
+
+        distribution:
+          Math.round(
+            distributionScore
           )
       };
 
@@ -962,8 +1077,6 @@ module.exports = async function handler(req, res) {
 
     /* =====================================================
        NEXT LEADER RADAR
-
-       EARLY 기준 정렬
     ===================================================== */
 
     const nextLeaderRadar =
@@ -985,13 +1098,60 @@ module.exports = async function handler(req, res) {
 
 
     /* =====================================================
+       EXHAUSTION SECTORS
+
+       공세 종료 위험 섹터
+
+       중요한 점:
+       그냥 하락하는 약한 섹터를 뽑지 않는다.
+
+       1. 일정 수준의 HAN 또는 Liquidity 존재
+       2. Breadth / Momentum 약화
+       3. 최소 거래대금 비중 존재
+    ===================================================== */
+
+    const exhaustionSectors =
+      [...sectors]
+
+        .filter(
+          sector => {
+
+            const hadStrength =
+              sector.scores.han >= 40 ||
+              sector.scores.liquidity >= 35;
+
+
+            const weakening =
+              sector.advanceRatio < 55 ||
+              sector.averageChangeRate < 0.5;
+
+
+            const meaningfulLiquidity =
+              sector.tradingShare >= 0.5;
+
+
+            return (
+              hadStrength &&
+              weakening &&
+              meaningfulLiquidity
+            );
+          }
+        )
+
+        .sort(
+          (a, b) =>
+            b.scores.exhaustion -
+            a.scores.exhaustion
+        )
+
+        .slice(
+          0,
+          10
+        );
+
+
+    /* =====================================================
        PRODUCTION READINESS
-
-       핵심 변경점:
-
-       종목수 90% 분류를 요구하지 않는다.
-
-       거래대금 Coverage를 더 중요하게 본다.
     ===================================================== */
 
     const MIN_STOCK_COVERAGE =
@@ -1031,7 +1191,7 @@ module.exports = async function handler(req, res) {
       ok: true,
 
       version:
-        "SECTOR_SCAN_V2_HAN_EARLY",
+        "SECTOR_SCAN_V3_HAN_EARLY_EXHAUSTION",
 
       date:
         snapshot.date ||
@@ -1103,6 +1263,10 @@ module.exports = async function handler(req, res) {
       },
 
 
+      /* ===================================================
+         CURRENT LEADERS
+      =================================================== */
+
       currentLeaders:
         currentLeaders.map(
           sector => ({
@@ -1122,6 +1286,9 @@ module.exports = async function handler(req, res) {
             early:
               sector.scores.early,
 
+            exhaustion:
+              sector.scores.exhaustion,
+
             stockCount:
               sector.stockCount,
 
@@ -1139,6 +1306,10 @@ module.exports = async function handler(req, res) {
           })
         ),
 
+
+      /* ===================================================
+         NEXT LEADER RADAR
+      =================================================== */
 
       nextLeaderRadar:
         nextLeaderRadar.map(
@@ -1159,6 +1330,9 @@ module.exports = async function handler(req, res) {
             early:
               sector.scores.early,
 
+            exhaustion:
+              sector.scores.exhaustion,
+
             stockCount:
               sector.stockCount,
 
@@ -1177,8 +1351,87 @@ module.exports = async function handler(req, res) {
         ),
 
 
+      /* ===================================================
+         EXHAUSTION SECTORS
+      =================================================== */
+
+      exhaustionSectors:
+        exhaustionSectors.map(
+          sector => ({
+
+            id:
+              sector.id,
+
+            name:
+              sector.name,
+
+            stage:
+              sector.stage,
+
+            exhaustion:
+              sector.scores.exhaustion,
+
+            han:
+              sector.scores.han,
+
+            early:
+              sector.scores.early,
+
+            breadth:
+              sector.scores.breadth,
+
+            momentum:
+              sector.scores.momentum,
+
+            liquidity:
+              sector.scores.liquidity,
+
+            breadthWeakness:
+              sector.scores.breadthWeakness,
+
+            momentumWeakness:
+              sector.scores.momentumWeakness,
+
+            distribution:
+              sector.scores.distribution,
+
+            stockCount:
+              sector.stockCount,
+
+            rising:
+              sector.rising,
+
+            falling:
+              sector.falling,
+
+            advanceRatio:
+              sector.advanceRatio,
+
+            averageChangeRate:
+              sector.averageChangeRate,
+
+            tradingShare:
+              sector.tradingShare,
+
+            tradingValue:
+              sector.tradingValue,
+
+            leaders:
+              sector.leaders
+          })
+        ),
+
+
+      /* ===================================================
+         ALL SECTORS
+      =================================================== */
+
       sectors,
 
+
+      /* ===================================================
+         UNCLASSIFIED
+      =================================================== */
 
       unclassified: {
 
@@ -1213,6 +1466,10 @@ module.exports = async function handler(req, res) {
       },
 
 
+      /* ===================================================
+         PERFORMANCE
+      =================================================== */
+
       performance: {
 
         elapsedMs:
@@ -1226,7 +1483,7 @@ module.exports = async function handler(req, res) {
           "MASTER_PLUS_SAFE_NAME_INFERENCE",
 
         ranking:
-          "HAN_EARLY_V1"
+          "HAN_EARLY_EXHAUSTION_V1"
       }
     });
 
@@ -1234,7 +1491,7 @@ module.exports = async function handler(req, res) {
   } catch (error) {
 
     console.error(
-      "SECTOR SCAN V2 ERROR",
+      "SECTOR SCAN V3 ERROR",
       error
     );
 
@@ -1244,7 +1501,7 @@ module.exports = async function handler(req, res) {
       ok: false,
 
       version:
-        "SECTOR_SCAN_V2_HAN_EARLY",
+        "SECTOR_SCAN_V3_HAN_EARLY_EXHAUSTION",
 
       elapsedMs:
         Date.now() -
