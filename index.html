@@ -1,1800 +1,769 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Leader Cycle Scanner</title>
+  <meta charset="UTF-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+  />
 
-<style>
-*{box-sizing:border-box}
+  <title>LEADER CYCLE</title>
 
-:root{
-  --bg:#070a0f;
-  --card:#10151d;
-  --box:#151b24;
-  --line:#222c38;
-  --text:#f4f7fa;
-  --muted:#7c8998;
-  --green:#35e69a;
-  --blue:#55a7ff;
-  --yellow:#ffd166;
-  --red:#ff7184;
-  --orange:#ffb454;
-}
+  <style>
+    * {
+      box-sizing: border-box;
+    }
 
-body{
-  margin:0;
-  background:var(--bg);
-  color:var(--text);
-  font-family:-apple-system,BlinkMacSystemFont,"Noto Sans KR",sans-serif;
-}
+    :root {
+      --bg: #07090d;
+      --panel: #11151c;
+      --panel2: #171c25;
+      --line: #242b36;
+      --text: #f5f7fa;
+      --muted: #8d97a8;
 
-main{
-  max-width:950px;
-  margin:auto;
-  padding:20px 14px 70px;
-}
+      --red: #ff5364;
+      --green: #39d98a;
+      --blue: #5d8cff;
+      --yellow: #ffd166;
+      --purple: #a778ff;
+    }
 
-header{
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-  margin-bottom:27px;
-}
+    body {
+      margin: 0;
+      background:
+        radial-gradient(
+          circle at top right,
+          rgba(93,140,255,.12),
+          transparent 35%
+        ),
+        var(--bg);
 
-.logo{
-  font-weight:900;
-  font-size:20px;
-}
+      color: var(--text);
 
-.logo b{color:var(--green)}
+      font-family:
+        -apple-system,
+        BlinkMacSystemFont,
+        "Segoe UI",
+        sans-serif;
 
-.muted{
-  color:var(--muted);
-  font-size:11px;
-}
+      min-height: 100vh;
+    }
 
-h1{
-  font-size:26px;
-  margin:0 0 7px;
-}
+    .app {
+      width: 100%;
+      max-width: 760px;
+      margin: 0 auto;
+      padding:
+        calc(22px + env(safe-area-inset-top))
+        16px
+        calc(40px + env(safe-area-inset-bottom));
+    }
 
-.desc{
-  color:#84909f;
-  font-size:12px;
-  line-height:1.65;
-}
+    header {
+      margin-bottom: 24px;
+    }
 
-.statusLine{
-  margin-top:10px;
-  color:#697788;
-  font-size:10px;
-  line-height:1.6;
-}
+    .brand {
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 2.4px;
+      color: var(--blue);
+      margin-bottom: 8px;
+    }
 
-.card{
-  background:var(--card);
-  border:1px solid var(--line);
-  border-radius:17px;
-  padding:17px;
-  margin-top:15px;
-}
+    h1 {
+      margin: 0;
+      font-size: 30px;
+      letter-spacing: -1.2px;
+    }
 
-.title{
-  color:#8a96a5;
-  font-size:10px;
-  font-weight:900;
-  letter-spacing:1.2px;
-  margin-bottom:13px;
-}
+    .subtitle {
+      color: var(--muted);
+      margin-top: 8px;
+      font-size: 14px;
+    }
 
-.item{
-  display:grid;
-  grid-template-columns:28px 1fr 52px 86px;
-  gap:8px;
-  align-items:center;
-  padding:15px 0;
-  border-bottom:1px solid #1e2631;
-  cursor:pointer;
-}
+    .status {
+      display: flex;
+      gap: 8px;
+      margin-top: 14px;
+      flex-wrap: wrap;
+    }
 
-.item:last-child{border:0}
+    .badge {
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: var(--panel2);
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
 
-.rank{
-  color:#657181;
-  font-size:11px;
-}
+    .badge.ready {
+      color: var(--green);
+    }
 
-.name{
-  font-weight:850;
-  min-width:0;
-}
+    section {
+      margin-top: 28px;
+    }
 
-.sub{
-  color:#748191;
-  font-size:9px;
-  margin-top:5px;
-  line-height:1.5;
-}
+    .section-head {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
 
-.score{
-  font-size:18px;
-  font-weight:900;
-  text-align:right;
-}
+    .section-title {
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: -.5px;
+    }
 
-.tag{
-  text-align:center;
-  padding:7px 3px;
-  border-radius:14px;
-  font-size:8px;
-  font-weight:900;
-}
+    .section-desc {
+      font-size: 12px;
+      color: var(--muted);
+    }
 
-.leader{
-  background:#103d30;
-  color:var(--green);
-}
+    .sector-list {
+      display: grid;
+      gap: 10px;
+    }
 
-.emerge{
-  background:#102f4e;
-  color:#64b4ff;
-}
+    .sector {
+      background:
+        linear-gradient(
+          135deg,
+          rgba(255,255,255,.025),
+          transparent
+        ),
+        var(--panel);
 
-.entry{
-  background:#203924;
-  color:#85ef99;
-}
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 16px;
+    }
 
-.watch{
-  background:#403316;
-  color:var(--yellow);
-}
+    .sector-top {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: flex-start;
+    }
 
-.weak{
-  background:#351a22;
-  color:var(--red);
-}
+    .rank {
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 5px;
+    }
 
-.bar{
-  height:3px;
-  background:#232c37;
-  border-radius:5px;
-  margin-top:7px;
-  overflow:hidden;
-}
+    .sector-name {
+      font-size: 20px;
+      font-weight: 850;
+    }
 
-.fill{
-  height:100%;
-  background:linear-gradient(90deg,#4d9fff,#35e69a);
-  border-radius:5px;
-}
+    .stage {
+      font-size: 11px;
+      font-weight: 900;
+      padding: 6px 9px;
+      border-radius: 999px;
+      background: rgba(93,140,255,.12);
+      color: var(--blue);
+    }
 
-.tabs{
-  display:flex;
-  gap:7px;
-  margin-top:20px;
-  overflow:auto;
-}
+    .stage.STRONG {
+      background: rgba(255,83,100,.12);
+      color: var(--red);
+    }
 
-.tab{
-  border:1px solid #26313e;
-  background:#111821;
-  color:#8996a5;
-  padding:10px 13px;
-  border-radius:10px;
-  font-size:10px;
-  font-weight:800;
-  white-space:nowrap;
-  cursor:pointer;
-}
+    .stage.EMERGING {
+      background: rgba(57,217,138,.12);
+      color: var(--green);
+    }
 
-.tab.active{
-  background:#1b2732;
-  color:#fff;
-  border-color:#45596d;
-}
+    .scores {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+      margin-top: 14px;
+    }
 
-.grid{
-  display:grid;
-  grid-template-columns:1fr 1fr;
-  gap:9px;
-}
+    .score {
+      background: var(--panel2);
+      border-radius: 12px;
+      padding: 11px;
+    }
 
-.box{
-  background:var(--box);
-  border-radius:11px;
-  padding:13px;
-}
+    .score-label {
+      color: var(--muted);
+      font-size: 11px;
+    }
 
-.box small{
-  color:#7c8998;
-  font-size:9px;
-}
+    .score-value {
+      margin-top: 3px;
+      font-size: 22px;
+      font-weight: 900;
+    }
 
-.box strong{
-  display:block;
-  font-size:19px;
-  margin-top:6px;
-  overflow-wrap:anywhere;
-}
+    .han {
+      color: var(--red);
+    }
 
-.green{color:var(--green)!important}
-.yellow{color:var(--yellow)!important}
-.red{color:var(--red)!important}
-.blue{color:var(--blue)!important}
-.orange{color:var(--orange)!important}
+    .early {
+      color: var(--green);
+    }
 
-.alert{
-  background:#13251f;
-  border:1px solid #20513e;
-  color:#70e9b7;
-  padding:12px;
-  border-radius:11px;
-  font-size:10px;
-  line-height:1.7;
-  margin-top:12px;
-}
+    .metrics {
+      display: flex;
+      gap: 14px;
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 12px;
+      flex-wrap: wrap;
+    }
 
-.warning{
-  background:#292113;
-  border:1px solid #4c3a20;
-  color:#e8c983;
-  padding:12px;
-  border-radius:11px;
-  font-size:10px;
-  line-height:1.7;
-  margin-top:12px;
-}
+    .leaders {
+      border-top: 1px solid var(--line);
+      margin-top: 14px;
+      padding-top: 12px;
+    }
 
-.error{
-  background:#2b161c;
-  border:1px solid #572633;
-  color:#ff91a1;
-  padding:12px;
-  border-radius:11px;
-  font-size:10px;
-  line-height:1.7;
-  margin-top:12px;
-}
+    .leaders-title {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
 
-.back{
-  border:0;
-  background:#171f29;
-  color:#d8e0e8;
-  padding:9px 12px;
-  border-radius:9px;
-  font-weight:700;
-  margin-bottom:17px;
-  cursor:pointer;
-}
+    .stock {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      gap: 10px;
+    }
 
-.stock{
-  display:flex;
-  justify-content:space-between;
-  gap:12px;
-  align-items:center;
-  padding:14px 1px;
-  border-bottom:1px solid #202833;
-  cursor:pointer;
-}
+    .stock + .stock {
+      border-top: 1px solid rgba(255,255,255,.04);
+    }
 
-.stock:last-child{border:0}
+    .stock-name {
+      font-weight: 700;
+      font-size: 14px;
+    }
 
-.stock strong{font-size:14px}
+    .stock-code {
+      color: var(--muted);
+      font-size: 10px;
+      margin-top: 2px;
+    }
 
-.stock small{
-  display:block;
-  color:#718091;
-  margin-top:4px;
-  font-size:9px;
-  line-height:1.5;
-}
+    .stock-rate {
+      font-weight: 800;
+      font-size: 14px;
+    }
 
-.stockScore{
-  font-size:19px;
-  font-weight:900;
-  color:var(--green);
-}
+    .up {
+      color: var(--red);
+    }
 
-.chartWrap{
-  margin-top:14px;
-  background:#0b1017;
-  border:1px solid #202a36;
-  border-radius:13px;
-  padding:10px;
-}
+    .down {
+      color: var(--blue);
+    }
 
-#priceChart{
-  width:100%;
-  height:300px;
-  display:block;
-}
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
 
-.loading{
-  color:#7c8998;
-  font-size:11px;
-  padding:25px 0;
-  text-align:center;
-  line-height:1.8;
-}
+    .summary-card {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 14px;
+    }
 
-.empty{
-  color:#697788;
-  font-size:10px;
-  padding:17px 3px;
-}
+    .summary-label {
+      font-size: 11px;
+      color: var(--muted);
+    }
 
-.metricRow{
-  display:flex;
-  gap:8px;
-  flex-wrap:wrap;
-  margin-top:12px;
-}
+    .summary-value {
+      margin-top: 5px;
+      font-size: 21px;
+      font-weight: 900;
+    }
 
-.metric{
-  flex:1;
-  min-width:80px;
-  background:var(--box);
-  padding:10px;
-  border-radius:10px;
-}
+    .loading {
+      padding: 50px 20px;
+      text-align: center;
+      color: var(--muted);
+    }
 
-.metric small{
-  display:block;
-  color:#748292;
-  font-size:8px;
-}
+    .error {
+      color: var(--red);
+      background: rgba(255,83,100,.08);
+      border: 1px solid rgba(255,83,100,.25);
+      border-radius: 14px;
+      padding: 16px;
+      line-height: 1.6;
+    }
 
-.metric strong{
-  display:block;
-  margin-top:5px;
-  font-size:13px;
-}
-
-#scanner,#sectorPage,#stockPage{
-  display:none;
-}
-
-footer{
-  text-align:center;
-  color:#515d6c;
-  font-size:9px;
-  margin-top:30px;
-  line-height:1.7;
-}
-
-@media(max-width:520px){
-  .item{
-    grid-template-columns:25px 1fr 45px 78px;
-  }
-
-  .card{
-    padding:15px;
-  }
-
-  .tag{
-    font-size:7.5px;
-  }
-}
-</style>
+    footer {
+      color: #596273;
+      text-align: center;
+      font-size: 11px;
+      margin-top: 40px;
+    }
+  </style>
 </head>
 
 <body>
-<main>
 
-<header>
-  <div class="logo">LEADER <b>CYCLE</b></div>
-  <div class="muted" id="today"></div>
-</header>
+<div class="app">
 
-<!-- HOME -->
-<div id="home">
+  <header>
+    <div class="brand">
+      LEADER CYCLE
+    </div>
 
-<h1>주도주 사이클 탐지 시스템</h1>
+    <h1>
+      시장 주도주 레이더
+    </h1>
 
-<div class="desc">
-KOSPI · KOSDAQ 시장 데이터를 분석하여 현재 주도주와 차기 주도주 후보를 추적합니다.<br>
-추세 · 모멘텀 · 거래대금 · 이동평균 · 지속성을 종합 분석합니다.
-</div>
+    <div class="subtitle">
+      시장의 현재 주도 섹터와 다음 주도 후보를 추적합니다.
+    </div>
 
-<div id="apiStatus" class="statusLine">
-랭킹 데이터를 불러오는 중...
-</div>
+    <div
+      id="status"
+      class="status"
+    ></div>
+  </header>
 
-<div class="tabs">
-  <button class="tab active">DASHBOARD</button>
-  <button class="tab" onclick="showScanner()">전체 시장 SCANNER</button>
-</div>
 
-<section class="card">
-  <div class="title">🔥 CURRENT LEADERS</div>
-  <div id="leaders">
-    <div class="loading">분석 중...</div>
+  <div id="app">
+    <div class="loading">
+      시장 데이터 분석 중...
+    </div>
   </div>
-</section>
 
-<section class="card">
-  <div class="title">🚀 NEXT LEADER RADAR</div>
-  <div id="radar">
-    <div class="loading">분석 중...</div>
-  </div>
-</section>
 
-<section class="card">
-  <div class="title">🎯 ENTRY OPPORTUNITY</div>
-  <div id="entries">
-    <div class="loading">분석 중...</div>
-  </div>
-</section>
-
-<section class="card">
-  <div class="title">⚠️ EXHAUSTION RISK</div>
-  <div id="exhaustion">
-    <div class="loading">분석 중...</div>
-  </div>
-</section>
+  <footer>
+    LEADER CYCLE · KRX MARKET DATA
+  </footer>
 
 </div>
 
-<!-- SCANNER -->
-<div id="scanner">
-
-<button class="back" onclick="goHome()">← Dashboard</button>
-
-<h1>전체 시장 Scanner</h1>
-
-<div class="desc">
-실제 랭킹 API에서 탐지된 주도주 후보 전체 목록입니다.
-</div>
-
-<section class="card">
-  <div class="title">MARKET RANKING</div>
-  <div id="allStocks"></div>
-</section>
-
-</div>
-
-<!-- SECTOR -->
-<div id="sectorPage">
-
-<button class="back" onclick="backPrevious()">← 뒤로</button>
-
-<h1 id="sectorTitle">섹터</h1>
-
-<div class="desc">
-동일 섹터에서 탐지된 주도종목입니다.
-</div>
-
-<section class="card">
-<div class="grid">
-
-<div class="box">
-  <small>SECTOR SCORE</small>
-  <strong id="sectorScore">-</strong>
-</div>
-
-<div class="box">
-  <small>STOCKS</small>
-  <strong id="sectorStockCount">-</strong>
-</div>
-
-<div class="box">
-  <small>TOP STAGE</small>
-  <strong id="sectorStage">-</strong>
-</div>
-
-<div class="box">
-  <small>TOP SCORE</small>
-  <strong id="sectorTopScore" class="green">-</strong>
-</div>
-
-</div>
-</section>
-
-<section class="card">
-  <div class="title">LEADING STOCKS</div>
-  <div id="stocks"></div>
-</section>
-
-</div>
-
-<!-- STOCK -->
-<div id="stockPage">
-
-<button class="back" onclick="backSector()">← 섹터</button>
-
-<h1 id="stockTitle"></h1>
-<div class="desc" id="ticker"></div>
-
-<section class="card">
-
-<div class="title">LIVE MARKET ANALYSIS</div>
-
-<div id="stockLoading" class="loading">
-KRX 데이터를 분석하고 있습니다...
-</div>
-
-<div id="stockContent" style="display:none">
-
-<div class="grid">
-
-<div class="box">
-  <small>LEADER SCORE</small>
-  <strong id="stockCycle" class="green">-</strong>
-</div>
-
-<div class="box">
-  <small>STAGE</small>
-  <strong id="stockStage">-</strong>
-</div>
-
-<div class="box">
-  <small>CURRENT PRICE</small>
-  <strong id="currentPrice">-</strong>
-</div>
-
-<div class="box">
-  <small>CHANGE</small>
-  <strong id="changeRate">-</strong>
-</div>
-
-</div>
-
-<div class="chartWrap">
-  <canvas id="priceChart"></canvas>
-</div>
-
-<div class="metricRow">
-
-<div class="metric">
-  <small>MA5</small>
-  <strong id="ma5Value" class="green">-</strong>
-</div>
-
-<div class="metric">
-  <small>MA20</small>
-  <strong id="ma20Value" class="blue">-</strong>
-</div>
-
-<div class="metric">
-  <small>MA60</small>
-  <strong id="ma60Value" class="orange">-</strong>
-</div>
-
-</div>
-
-<div id="trendMessage" class="alert"></div>
-
-</div>
-</section>
-</div>
-
-<footer>
-LEADER CYCLE ANALYTICS<br>
-전체 시장 스캔 기반 주도주 탐지 연구 시스템 · 투자 권유가 아닙니다.
-</footer>
-
-</main>
 
 <script>
 
-/* =========================================================
-   STATE
-========================================================= */
-
-let rankingData=[];
-let currentSector=null;
-let currentStock=null;
-let previous="home";
+const API =
+  "/api/sector-scan";
 
 
-/* =========================================================
-   HELPERS
-========================================================= */
+function number(value) {
 
-function num(v){
-  const n=Number(v);
-  return Number.isFinite(n)?n:0;
+  const n =
+    Number(value);
+
+  return Number.isFinite(n)
+    ? n
+    : 0;
 }
 
-function esc(v){
-  return String(v ?? "")
-    .replace(/&/g,"&amp;")
-    .replace(/</g,"&lt;")
-    .replace(/>/g,"&gt;")
-    .replace(/"/g,"&quot;")
-    .replace(/'/g,"&#039;");
-}
 
-function getScore(x,type="leader"){
+function formatRate(value) {
 
-  const scores=x?.scores || {};
+  const n =
+    number(value);
 
-  if(type==="early"){
-    return num(
-      scores.early ??
-      x.earlyScore ??
-      x.discoveryScore
-    );
-  }
-
-  if(type==="entry"){
-    return num(
-      scores.entry ??
-      x.entryScore
-    );
-  }
-
-  if(type==="exhaustion"){
-    return num(
-      scores.exhaustion ??
-      x.exhaustionScore
-    );
-  }
-
-  return num(
-    scores.leader ??
-    scores.total ??
-    x.leaderScore ??
-    x.score
-  );
-}
-
-function getSectorName(x){
   return (
-    x.sector ||
-    x.sectorName ||
-    x.industry ||
-    "미분류"
-  );
-}
-
-function getCode(x){
-  return String(
-    x.code ||
-    x.stockCode ||
-    ""
-  ).trim();
-}
-
-function getName(x){
-  return (
-    x.name ||
-    x.stockName ||
-    getCode(x) ||
-    "종목"
-  );
-}
-
-function getStage(x){
-  return String(
-    x.stage ||
-    x.status ||
-    "WATCH"
-  ).toUpperCase();
-}
-
-function tagClass(stage){
-
-  stage=String(stage).toUpperCase();
-
-  if(stage==="LEADER") return "leader";
-  if(stage==="EMERGING") return "emerge";
-  if(stage==="ENTRY") return "entry";
-  if(stage==="MATURE") return "watch";
-  if(stage==="EXHAUSTION") return "weak";
-  if(stage==="WEAK") return "weak";
-
-  return "watch";
-}
-
-
-/* =========================================================
-   RANKINGS API
-========================================================= */
-
-async function loadRankings(){
-
-  const status=
-    document.getElementById("apiStatus");
-
-  try{
-
-    const response=
-      await fetch(
-        "/api/rankings?t="+Date.now(),
-        {cache:"no-store"}
-      );
-
-    const data=
-      await response.json();
-
-    if(!response.ok || !data.ok){
-      throw new Error(
-        data.error ||
-        "rankings API 오류"
-      );
-    }
-
-    /*
-      현재 rankings API 구조 대응
-
-      우선순위:
-      topPicks
-      rankings
-      stocks
-      results
-      data
-    */
-
-    let rows=[];
-
-    if(Array.isArray(data.topPicks)){
-      rows=data.topPicks;
-    }
-    else if(Array.isArray(data.rankings)){
-      rows=data.rankings;
-    }
-    else if(Array.isArray(data.stocks)){
-      rows=data.stocks;
-    }
-    else if(Array.isArray(data.results)){
-      rows=data.results;
-    }
-    else if(Array.isArray(data.data)){
-      rows=data.data;
-    }
-
-    rankingData=
-      rows.filter(
-        x=>getCode(x) && getName(x)
-      );
-
-    if(!rankingData.length){
-      throw new Error(
-        "API는 정상이나 종목 배열이 비어 있습니다."
-      );
-    }
-
-    status.textContent=
-      `LIVE · ${data.date || ""} · ${rankingData.length}개 후보 분석`;
-
-    renderDashboard();
-    renderScanner();
-
-  }
-  catch(error){
-
-    console.error(error);
-
-    status.innerHTML=
-      `<span class="red">랭킹 로딩 실패 · ${esc(error.message)}</span>`;
-
-    ["leaders","radar","entries","exhaustion"]
-      .forEach(id=>{
-        document.getElementById(id).innerHTML=
-          `<div class="empty">데이터를 불러오지 못했습니다.</div>`;
-      });
-  }
-}
-
-
-/* =========================================================
-   4-CATEGORY DASHBOARD
-========================================================= */
-
-function renderDashboard(){
-
-  /*
-    1. CURRENT LEADERS
-  */
-
-  let leaders=
-    rankingData
-      .filter(x=>{
-        const stage=getStage(x);
-        return (
-          stage==="LEADER" ||
-          getScore(x,"leader")>=75
-        );
-      })
-      .sort(
-        (a,b)=>
-          getScore(b,"leader")-
-          getScore(a,"leader")
-      )
-      .slice(0,10);
-
-
-  /*
-    2. NEXT LEADER RADAR
-
-    이미 LEADER인 종목은 제외.
-  */
-
-  let radar=
-    rankingData
-      .filter(x=>{
-        const stage=getStage(x);
-
-        return (
-          stage!=="LEADER" &&
-          getScore(x,"early")>=60
-        );
-      })
-      .sort(
-        (a,b)=>
-          getScore(b,"early")-
-          getScore(a,"early")
-      )
-      .slice(0,10);
-
-
-  /*
-    3. ENTRY OPPORTUNITY
-  */
-
-  let entries=
-    rankingData
-      .filter(
-        x=>
-          getScore(x,"entry")>0 &&
-          getScore(x,"exhaustion")<70
-      )
-      .sort(
-        (a,b)=>
-          getScore(b,"entry")-
-          getScore(a,"entry")
-      )
-      .slice(0,10);
-
-
-  /*
-    4. EXHAUSTION RISK
-  */
-
-  let exhaustion=
-    rankingData
-      .filter(
-        x=>
-          getScore(x,"exhaustion")>0
-      )
-      .sort(
-        (a,b)=>
-          getScore(b,"exhaustion")-
-          getScore(a,"exhaustion")
-      )
-      .slice(0,10);
-
-
-  renderRankingList(
-    "leaders",
-    leaders,
-    "leader"
-  );
-
-  renderRankingList(
-    "radar",
-    radar,
-    "early"
-  );
-
-  renderRankingList(
-    "entries",
-    entries,
-    "entry"
-  );
-
-  renderRankingList(
-    "exhaustion",
-    exhaustion,
-    "exhaustion"
+    (n > 0 ? "+" : "") +
+    n.toFixed(2) +
+    "%"
   );
 }
 
 
-function renderRankingList(
-  id,
-  rows,
-  scoreType
-){
+function formatMoney(value) {
 
-  const el=
-    document.getElementById(id);
+  const n =
+    number(value);
 
-  if(!rows.length){
-
-    el.innerHTML=
-      `<div class="empty">현재 조건을 충족하는 종목이 없습니다.</div>`;
-
-    return;
+  if (n >= 1e12) {
+    return (
+      n / 1e12
+    ).toFixed(1) + "조";
   }
 
-  let html="";
+  if (n >= 1e8) {
+    return (
+      n / 1e8
+    ).toFixed(0) + "억";
+  }
 
-  rows.forEach((x,i)=>{
+  return n.toLocaleString();
+}
 
-    const score=
-      getScore(x,scoreType);
 
-    const leader=
-      getScore(x,"leader");
+function stockHTML(stock) {
 
-    const early=
-      getScore(x,"early");
+  const rate =
+    number(
+      stock.changeRate
+    );
 
-    const entryScore=
-      getScore(x,"entry");
+  const rateClass =
+    rate > 0
+      ? "up"
+      : rate < 0
+        ? "down"
+        : "";
 
-    const exhaustion=
-      getScore(x,"exhaustion");
+  return `
+    <div class="stock">
 
-    const stage=
-      getStage(x);
-
-    html+=`
-      <div class="item"
-        onclick="openSectorByStock('${esc(getCode(x))}')">
-
-        <div class="rank">
-          ${String(i+1).padStart(2,"0")}
+      <div>
+        <div class="stock-name">
+          ${stock.name || "-"}
         </div>
 
-        <div class="name">
-          ${esc(getName(x))}
-
-          <div class="sub">
-            ${esc(getSectorName(x))}
-            · L ${leader}
-            · E ${early}
-            · ENTRY ${entryScore}
-            · EX ${exhaustion}
-          </div>
-
-          <div class="bar">
-            <div class="fill"
-              style="width:${Math.min(100,score)}%">
-            </div>
-          </div>
+        <div class="stock-code">
+          ${stock.code || ""}
+          ·
+          ${stock.market || ""}
         </div>
-
-        <div class="score">
-          ${Math.round(score)}
-        </div>
-
-        <div class="tag ${tagClass(stage)}">
-          ${esc(stage)}
-        </div>
-
       </div>
-    `;
-  });
 
-  el.innerHTML=html;
-}
-
-
-/* =========================================================
-   SCANNER
-========================================================= */
-
-function renderScanner(){
-
-  const rows=
-    [...rankingData]
-      .sort(
-        (a,b)=>
-          getScore(b,"leader")-
-          getScore(a,"leader")
-      );
-
-  let html="";
-
-  rows.forEach((x,i)=>{
-
-    const score=
-      getScore(x,"leader");
-
-    const stage=
-      getStage(x);
-
-    html+=`
-      <div class="item"
-        onclick="openSectorByStock('${esc(getCode(x))}')">
-
-        <div class="rank">
-          #${i+1}
-        </div>
-
-        <div class="name">
-          ${esc(getName(x))}
-
-          <div class="sub">
-            ${esc(getSectorName(x))}
-            · ${esc(getCode(x))}
-          </div>
-        </div>
-
-        <div class="score">
-          ${Math.round(score)}
-        </div>
-
-        <div class="tag ${tagClass(stage)}">
-          ${esc(stage)}
-        </div>
-
+      <div class="stock-rate ${rateClass}">
+        ${formatRate(rate)}
       </div>
-    `;
-  });
 
-  document.getElementById("allStocks").innerHTML=
-    html ||
-    `<div class="empty">데이터 없음</div>`;
+    </div>
+  `;
 }
 
 
-/* =========================================================
-   SECTOR PAGE
-========================================================= */
-
-function openSectorByStock(code){
-
-  const selected=
-    rankingData.find(
-      x=>getCode(x)===code
-    );
-
-  if(!selected)return;
-
-  const sectorName=
-    getSectorName(selected);
-
-  const stocks=
-    rankingData
-      .filter(
-        x=>
-          getSectorName(x)===
-          sectorName
-      )
-      .sort(
-        (a,b)=>
-          getScore(b,"leader")-
-          getScore(a,"leader")
-      );
-
-  currentSector={
-    name:sectorName,
-    stocks
-  };
-
-  document.getElementById(
-    "sectorTitle"
-  ).textContent=sectorName;
-
-  document.getElementById(
-    "sectorStockCount"
-  ).textContent=stocks.length;
-
-  const top=
-    stocks[0] || selected;
-
-  document.getElementById(
-    "sectorTopScore"
-  ).textContent=
-    Math.round(
-      getScore(top,"leader")
-    );
-
-  document.getElementById(
-    "sectorStage"
-  ).textContent=
-    getStage(top);
-
-  const avg=
-    stocks.length
-      ? stocks.reduce(
-          (sum,x)=>
-            sum+
-            getScore(x,"leader"),
-          0
-        )/stocks.length
-      :0;
-
-  document.getElementById(
-    "sectorScore"
-  ).textContent=
-    Math.round(avg);
-
-  let html="";
-
-  stocks.forEach((x,i)=>{
-
-    html+=`
-      <div class="stock"
-        onclick="openStockByCode('${esc(getCode(x))}')">
-
-        <div>
-          <strong>
-            ${i+1}. ${esc(getName(x))}
-          </strong>
-
-          <small>
-            ${esc(getCode(x))}
-            · ${esc(getStage(x))}
-            · ENTRY ${getScore(x,"entry")}
-          </small>
-        </div>
-
-        <div class="stockScore">
-          ${Math.round(getScore(x,"leader"))}
-        </div>
-
-      </div>
-    `;
-  });
-
-  document.getElementById(
-    "stocks"
-  ).innerHTML=html;
-
-  hideAll();
-
-  document.getElementById(
-    "sectorPage"
-  ).style.display="block";
-
-  window.scrollTo(0,0);
-}
-
-
-/* =========================================================
-   STOCK DETAIL
-========================================================= */
-
-async function openStockByCode(code){
-
-  currentStock=
-    rankingData.find(
-      x=>getCode(x)===code
-    );
-
-  if(!currentStock)return;
-
-  document.getElementById(
-    "stockTitle"
-  ).textContent=
-    getName(currentStock);
-
-  document.getElementById(
-    "ticker"
-  ).textContent=
-    `${getSectorName(currentStock)} · ${code}`;
-
-  hideAll();
-
-  document.getElementById(
-    "stockPage"
-  ).style.display="block";
-
-  const loading=
-    document.getElementById(
-      "stockLoading"
-    );
-
-  loading.style.display="block";
-
-  loading.innerHTML=
-    "KRX 데이터를 분석하고 있습니다...";
-
-  document.getElementById(
-    "stockContent"
-  ).style.display="none";
-
-  window.scrollTo(0,0);
-
-  try{
-
-    const response=
-      await fetch(
-        "/api/stock-detail?code="+
-        encodeURIComponent(code)+
-        "&t="+Date.now(),
-        {cache:"no-store"}
-      );
-
-    const data=
-      await response.json();
-
-    if(!response.ok || !data.ok){
-
-      throw new Error(
-        data.error ||
-        "종목 데이터 조회 실패"
-      );
-    }
-
-    const rankingScore=
-      getScore(
-        currentStock,
-        "leader"
-      );
-
-    const apiScore=
-      num(
-        data.score?.total ??
-        data.score?.leader ??
-        data.leaderScore
-      );
-
-    document.getElementById(
-      "stockCycle"
-    ).textContent=
-      apiScore ||
-      rankingScore ||
-      "-";
-
-    document.getElementById(
-      "stockStage"
-    ).textContent=
-      data.stage ||
-      getStage(currentStock);
-
-    const price=
-      num(data.price);
-
-    document.getElementById(
-      "currentPrice"
-    ).textContent=
-      price
-        ? price.toLocaleString()+"원"
-        : "-";
-
-    const rate=
-      num(data.changeRate);
-
-    const rateEl=
-      document.getElementById(
-        "changeRate"
-      );
-
-    rateEl.textContent=
-      (rate>0?"+":"")+
-      rate.toFixed(2)+"%";
-
-    rateEl.className=
-      rate>=0
-        ?"green"
-        :"red";
-
-
-    const ma=
-      data.movingAverage ||
-      data.ma ||
-      {};
-
-    document.getElementById(
-      "ma5Value"
-    ).textContent=
-      formatMA(
-        ma.ma5 ??
-        data.ma5
-      );
-
-    document.getElementById(
-      "ma20Value"
-    ).textContent=
-      formatMA(
-        ma.ma20 ??
-        data.ma20
-      );
-
-    document.getElementById(
-      "ma60Value"
-    ).textContent=
-      formatMA(
-        ma.ma60 ??
-        data.ma60
-      );
-
-
-    let chart=
-      data.chart ||
-      data.history ||
-      data.prices ||
-      [];
-
-    drawChart(chart);
-
-
-    const trend=
-      data.trend || {};
-
-    let message="";
-
-    if(trend.alignment){
-
-      message=
-        "🔥 완전 정배열 · 현재가 > MA5 > MA20 > MA60";
-
-    }
-    else if(trend.nearAlignment){
-
-      message=
-        "🚀 정배열 진입 직전 · 추세 전환 후보";
-
-    }
-    else if(trend.ma20Rising){
-
-      message=
-        "👀 MA20 상승 중 · 추세 강화 여부 관찰";
-
-    }
-    else if(!chart.length){
-
-      message=
-        "⚠️ 현재 가격 데이터는 조회됐지만 과거 시세 데이터가 없어 이동평균/차트를 계산할 수 없습니다.";
-
-    }
-    else{
-
-      message=
-        "⚠️ 현재 완전 정배열 조건은 충족하지 않았습니다.";
-
-    }
-
-    document.getElementById(
-      "trendMessage"
-    ).textContent=
-      message;
-
-    loading.style.display="none";
-
-    document.getElementById(
-      "stockContent"
-    ).style.display="block";
-
-  }
-  catch(error){
-
-    loading.innerHTML=
-      `<span class="red">
-        데이터 조회 실패<br><br>
-        ${esc(error.message)}
-      </span>`;
-  }
-}
-
-
-function formatMA(value){
-
-  const n=Number(value);
-
-  if(!Number.isFinite(n) || n<=0){
-    return "-";
-  }
-
-  return Math.round(n).toLocaleString();
-}
-
-
-/* =========================================================
-   CHART
-========================================================= */
-
-function drawChart(chart){
-
-  const canvas=
-    document.getElementById(
-      "priceChart"
-    );
-
-  const width=
-    canvas.clientWidth || 320;
-
-  const height=300;
-
-  const dpr=
-    window.devicePixelRatio || 1;
-
-  canvas.width=
-    width*dpr;
-
-  canvas.height=
-    height*dpr;
-
-  const ctx=
-    canvas.getContext("2d");
-
-  ctx.setTransform(
-    dpr,0,0,dpr,0,0
-  );
-
-  ctx.clearRect(
-    0,0,width,height
-  );
-
-  let data=
-    Array.isArray(chart)
-      ? [...chart]
+function sectorHTML(
+  sector,
+  index
+) {
+
+  const leaders =
+    Array.isArray(
+      sector.leaders
+    )
+      ? sector.leaders
       : [];
 
-  data=data
-    .map(x=>({
-      date:
-        x.date ||
-        x.basDd ||
-        x.BAS_DD ||
-        "",
+  return `
+    <div class="sector">
 
-      close:num(
-        x.close ??
-        x.price ??
-        x.TDD_CLSPRC
-      ),
+      <div class="sector-top">
 
-      ma5:num(
-        x.ma5 ??
-        x.MA5
-      ),
+        <div>
+          <div class="rank">
+            #${index + 1}
+          </div>
 
-      ma20:num(
-        x.ma20 ??
-        x.MA20
-      ),
+          <div class="sector-name">
+            ${sector.name || sector.id}
+          </div>
+        </div>
 
-      ma60:num(
-        x.ma60 ??
-        x.MA60
-      )
-    }))
-    .filter(
-      x=>x.close>0
-    );
+        <div class="stage ${sector.stage || ""}">
+          ${sector.stage || "WATCH"}
+        </div>
 
-  /*
-    API가 최신→과거 순서면 뒤집기
-  */
-
-  if(
-    data.length>=2 &&
-    String(data[0].date)>
-    String(data[data.length-1].date)
-  ){
-    data.reverse();
-  }
-
-  data=data.slice(-100);
-
-  if(!data.length){
-
-    ctx.fillStyle="#7c8998";
-    ctx.font="12px sans-serif";
-    ctx.fillText(
-      "차트 데이터 없음",
-      20,
-      40
-    );
-
-    return;
-  }
+      </div>
 
 
-  /*
-    MA가 API에 없더라도
-    종가 배열만 있으면 프론트에서 계산
-  */
+      <div class="scores">
 
-  function calcMA(period,index){
+        <div class="score">
+          <div class="score-label">
+            HAN · 현재 주도력
+          </div>
 
-    if(index<period-1){
-      return 0;
-    }
-
-    let sum=0;
-
-    for(
-      let i=index-period+1;
-      i<=index;
-      i++
-    ){
-      sum+=data[i].close;
-    }
-
-    return sum/period;
-  }
-
-  data.forEach((x,i)=>{
-
-    if(!x.ma5){
-      x.ma5=
-        calcMA(5,i);
-    }
-
-    if(!x.ma20){
-      x.ma20=
-        calcMA(20,i);
-    }
-
-    if(!x.ma60){
-      x.ma60=
-        calcMA(60,i);
-    }
-  });
+          <div class="score-value han">
+            ${number(sector.han)}
+          </div>
+        </div>
 
 
-  const values=[];
+        <div class="score">
+          <div class="score-label">
+            EARLY · 선행 신호
+          </div>
 
-  data.forEach(x=>{
+          <div class="score-value early">
+            ${number(sector.early)}
+          </div>
+        </div>
 
-    [
-      x.close,
-      x.ma5,
-      x.ma20,
-      x.ma60
-    ].forEach(v=>{
+      </div>
 
-      if(v>0){
-        values.push(v);
+
+      <div class="metrics">
+
+        <span>
+          종목 ${number(sector.stockCount)}개
+        </span>
+
+        <span>
+          상승비율 ${number(sector.advanceRatio).toFixed(1)}%
+        </span>
+
+        <span>
+          평균 ${formatRate(sector.averageChangeRate)}
+        </span>
+
+        <span>
+          거래비중 ${number(sector.tradingShare).toFixed(1)}%
+        </span>
+
+      </div>
+
+
+      ${
+        leaders.length
+          ? `
+            <div class="leaders">
+
+              <div class="leaders-title">
+                섹터 거래대금 리더
+              </div>
+
+              ${
+                leaders
+                  .slice(0, 5)
+                  .map(stockHTML)
+                  .join("")
+              }
+
+            </div>
+          `
+          : ""
       }
 
-    });
-
-  });
-
-  if(!values.length)return;
-
-  let min=Math.min(...values);
-  let max=Math.max(...values);
-
-  const range=
-    max-min || 1;
-
-  min-=range*0.08;
-  max+=range*0.08;
-
-  const left=12;
-  const right=10;
-  const top=30;
-  const bottom=20;
-
-  const chartWidth=
-    width-left-right;
-
-  const chartHeight=
-    height-top-bottom;
-
-
-  function xPos(i){
-
-    if(data.length<=1){
-      return left;
-    }
-
-    return left+
-      (
-        i/
-        (data.length-1)
-      )*
-      chartWidth;
-  }
-
-
-  function yPos(value){
-
-    return top+
-      (
-        (max-value)/
-        (max-min)
-      )*
-      chartHeight;
-  }
-
-
-  ctx.strokeStyle="#19222d";
-  ctx.lineWidth=1;
-
-  for(let i=0;i<5;i++){
-
-    const y=
-      top+
-      (chartHeight/4)*i;
-
-    ctx.beginPath();
-    ctx.moveTo(left,y);
-    ctx.lineTo(
-      width-right,
-      y
-    );
-    ctx.stroke();
-  }
-
-
-  function drawLine(
-    key,
-    color,
-    lineWidth
-  ){
-
-    ctx.beginPath();
-
-    let started=false;
-
-    data.forEach((row,i)=>{
-
-      const value=
-        Number(row[key]);
-
-      if(
-        !Number.isFinite(value) ||
-        value<=0
-      ){
-        started=false;
-        return;
-      }
-
-      const x=xPos(i);
-      const y=yPos(value);
-
-      if(!started){
-
-        ctx.moveTo(x,y);
-        started=true;
-
-      }else{
-
-        ctx.lineTo(x,y);
-      }
-
-    });
-
-    ctx.strokeStyle=color;
-    ctx.lineWidth=lineWidth;
-    ctx.lineJoin="round";
-    ctx.lineCap="round";
-    ctx.stroke();
-  }
-
-
-  drawLine(
-    "close",
-    "#f1f5f9",
-    2.2
-  );
-
-  drawLine(
-    "ma5",
-    "#35e69a",
-    1.7
-  );
-
-  drawLine(
-    "ma20",
-    "#55a7ff",
-    1.7
-  );
-
-  drawLine(
-    "ma60",
-    "#ffb454",
-    1.7
-  );
-
-
-  ctx.font=
-    "10px -apple-system,BlinkMacSystemFont,sans-serif";
-
-  ctx.fillStyle="#f1f5f9";
-  ctx.fillText("PRICE",12,15);
-
-  ctx.fillStyle="#35e69a";
-  ctx.fillText("MA5",55,15);
-
-  ctx.fillStyle="#55a7ff";
-  ctx.fillText("MA20",90,15);
-
-  ctx.fillStyle="#ffb454";
-  ctx.fillText("MA60",132,15);
+    </div>
+  `;
 }
 
 
-/* =========================================================
-   NAVIGATION
-========================================================= */
+function sectionHTML(
+  title,
+  desc,
+  sectors
+) {
 
-function hideAll(){
+  if (
+    !Array.isArray(sectors) ||
+    !sectors.length
+  ) {
+    return "";
+  }
 
-  [
-    "home",
-    "scanner",
-    "sectorPage",
-    "stockPage"
-  ].forEach(id=>{
+  return `
+    <section>
 
+      <div class="section-head">
+
+        <div class="section-title">
+          ${title}
+        </div>
+
+        <div class="section-desc">
+          ${desc}
+        </div>
+
+      </div>
+
+      <div class="sector-list">
+
+        ${
+          sectors
+            .slice(0, 10)
+            .map(sectorHTML)
+            .join("")
+        }
+
+      </div>
+
+    </section>
+  `;
+}
+
+
+async function load() {
+
+  const app =
     document.getElementById(
-      id
-    ).style.display="none";
+      "app"
+    );
 
-  });
-}
+  const status =
+    document.getElementById(
+      "status"
+    );
 
+  try {
 
-function showScanner(){
-
-  previous="scanner";
-
-  hideAll();
-
-  document.getElementById(
-    "scanner"
-  ).style.display="block";
-
-  window.scrollTo(0,0);
-}
+    const response =
+      await fetch(
+        API,
+        {
+          cache: "no-store"
+        }
+      );
 
 
-function goHome(){
-
-  previous="home";
-
-  hideAll();
-
-  document.getElementById(
-    "home"
-  ).style.display="block";
-
-  window.scrollTo(0,0);
-}
+    if (!response.ok) {
+      throw new Error(
+        `HTTP ${response.status}`
+      );
+    }
 
 
-function backPrevious(){
+    const data =
+      await response.json();
 
-  if(previous==="scanner"){
-    showScanner();
+
+    if (!data.ok) {
+
+      throw new Error(
+        data.error ||
+        "API 응답 오류"
+      );
+    }
+
+
+    const current =
+      Array.isArray(
+        data.currentLeaders
+      )
+        ? data.currentLeaders
+        : [];
+
+
+    const radar =
+      Array.isArray(
+        data.nextLeaderRadar
+      )
+        ? data.nextLeaderRadar
+        : [];
+
+
+    const coverage =
+      data.coverage ||
+      {};
+
+
+    const market =
+      data.market ||
+      {};
+
+
+    status.innerHTML = `
+
+      <div class="badge ready">
+        ● LIVE
+      </div>
+
+      <div class="badge">
+        기준일 ${data.date || "-"}
+      </div>
+
+      <div class="badge">
+        ${number(market.stocks).toLocaleString()} 종목
+      </div>
+
+    `;
+
+
+    app.innerHTML = `
+
+      <div class="summary">
+
+        <div class="summary-card">
+
+          <div class="summary-label">
+            거래대금 커버리지
+          </div>
+
+          <div class="summary-value">
+            ${number(
+              coverage.tradingValueCoverage
+            ).toFixed(1)}%
+          </div>
+
+        </div>
+
+
+        <div class="summary-card">
+
+          <div class="summary-label">
+            분석 섹터
+          </div>
+
+          <div class="summary-value">
+            ${number(
+              market.sectors
+            )}개
+          </div>
+
+        </div>
+
+      </div>
+
+
+      ${sectionHTML(
+        "🔥 현재 주도 섹터",
+        "HAN",
+        current
+      )}
+
+
+      ${sectionHTML(
+        "🌱 차기 주도 후보",
+        "EARLY",
+        radar
+      )}
+
+    `;
+
+  } catch (error) {
+
+    app.innerHTML = `
+      <div class="error">
+
+        <strong>
+          데이터를 불러오지 못했습니다.
+        </strong>
+
+        <br><br>
+
+        ${String(
+          error?.message ||
+          error
+        )}
+
+        <br><br>
+
+        /api/sector-scan 상태를 확인해주세요.
+
+      </div>
+    `;
   }
-  else{
-    goHome();
-  }
 }
 
 
-function backSector(){
-
-  hideAll();
-
-  document.getElementById(
-    "sectorPage"
-  ).style.display="block";
-
-  window.scrollTo(0,0);
-}
-
-
-/* =========================================================
-   DATE
-========================================================= */
-
-const d=new Date();
-
-document.getElementById(
-  "today"
-).textContent=
-
-  d.getFullYear()+"."+
-  String(
-    d.getMonth()+1
-  ).padStart(2,"0")+"."+
-  String(
-    d.getDate()
-  ).padStart(2,"0");
-
-
-/* =========================================================
-   START
-========================================================= */
-
-loadRankings();
+load();
 
 </script>
+
 </body>
 </html>
