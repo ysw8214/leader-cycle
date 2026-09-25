@@ -3,35 +3,22 @@ module.exports = async function handler(req, res) {
 
   try {
     /* =========================================================
-       LEADER CYCLE - RANKINGS V9 FAST
+       LEADER CYCLE - RANKINGS V8
 
-       목표
-       ---------------------------------------------------------
-       - V8 점수 철학 유지
-       - 종목별 API 호출 없음
-       - market-scan 후보 사용
-       - KRX 날짜별 BULK HISTORY
-       - 후보의 market 정보를 이용해 불필요한 시장 조회 감소
-       - Set 기반 중복 제거
-       - 60일 이상 확보 시 분석 가능
-       - 100일 확보 가능하면 100일 사용
-       - 신규상장 종목 때문에 전체 분석이 막히지 않음
+       V7 SCORE LOGIC PRESERVED
 
-       구조
+       변경점
        ---------------------------------------------------------
-       MARKET-SCAN
-           ↓
-       후보 최대 limit * 3
-           ↓
-       후보 시장 분류
-           ↓
-       KRX BULK HISTORY
-           ↓
-       HISTORY MAP
-           ↓
-       V8 SCORE ENGINE
-           ↓
-       ENTRY / LEADER / EARLY / EXHAUSTION
+       1. MARKET-SCAN 후보 발굴
+       2. KRX BULK HISTORY 유지
+       3. 종목별 API 반복 호출 없음
+       4. V7의 limit * 2 완료 조건 제거
+       5. scan 상위 순서 기준 실제 필요한 limit개가
+          분석 가능한 상태가 되면 history 수집 조기 종료
+       6. 신규상장/history 부족 종목은 자동 건너뛰고
+          다음 후보까지 history 확보
+       7. LEADER / EARLY / EXHAUSTION / ENTRY 점수식은
+          V7 그대로 유지
     ========================================================= */
 
     const apiKey = process.env.KRX_API_KEY;
@@ -100,8 +87,7 @@ module.exports = async function handler(req, res) {
       }
 
       return (
-        ((current - previous) /
-          previous) *
+        ((current - previous) / previous) *
         100
       );
     }
@@ -120,17 +106,14 @@ module.exports = async function handler(req, res) {
       }
 
       return (
-        valid.reduce(
-          (a, b) => a + b,
-          0
-        ) / valid.length
+        valid.reduce((a, b) => a + b, 0) /
+        valid.length
       );
     }
 
     function normalizeCode(value) {
-      const raw = String(
-        value || ""
-      ).trim();
+      const raw =
+        String(value || "").trim();
 
       if (/^\d{6}$/.test(raw)) {
         return raw;
@@ -144,41 +127,19 @@ module.exports = async function handler(req, res) {
         : raw;
     }
 
-    function normalizeMarket(value) {
-      const market = String(
-        value || ""
-      )
-        .trim()
-        .toUpperCase();
-
-      if (
-        market.includes("KOSDAQ") ||
-        market === "KSQ"
-      ) {
-        return "KOSDAQ";
-      }
-
-      if (
-        market.includes("KOSPI") ||
-        market === "STK"
-      ) {
-        return "KOSPI";
-      }
-
-      return null;
-    }
-
     function makeDate(date) {
       const y =
         date.getFullYear();
 
-      const m = String(
-        date.getMonth() + 1
-      ).padStart(2, "0");
+      const m =
+        String(
+          date.getMonth() + 1
+        ).padStart(2, "0");
 
-      const d = String(
-        date.getDate()
-      ).padStart(2, "0");
+      const d =
+        String(
+          date.getDate()
+        ).padStart(2, "0");
 
       return `${y}${m}${d}`;
     }
@@ -191,10 +152,11 @@ module.exports = async function handler(req, res) {
       const controller =
         new AbortController();
 
-      const timer = setTimeout(
-        () => controller.abort(),
-        timeoutMs
-      );
+      const timer =
+        setTimeout(
+          () => controller.abort(),
+          timeoutMs
+        );
 
       try {
         const response =
@@ -217,6 +179,7 @@ module.exports = async function handler(req, res) {
           status: response.status,
           json
         };
+
       } finally {
         clearTimeout(timer);
       }
@@ -232,25 +195,21 @@ module.exports = async function handler(req, res) {
         10
       );
 
-    const limit = clamp(
-      Number.isFinite(requestedLimit)
-        ? requestedLimit
-        : 10,
-      4,
-      20
-    );
+    const limit =
+      clamp(
+        Number.isFinite(requestedLimit)
+          ? requestedLimit
+          : 10,
+        4,
+        20
+      );
 
-    /*
-      history 부족 종목 자동 보충용.
-
-      기본 limit=10이면 후보 30개.
-    */
-
-    const scanLimit = clamp(
-      limit * 3,
-      limit,
-      50
-    );
+    const scanLimit =
+      clamp(
+        limit * 3,
+        limit,
+        50
+      );
 
     const requestedDate =
       String(
@@ -264,11 +223,7 @@ module.exports = async function handler(req, res) {
     let scanUrl =
       `${baseUrl}/api/market-scan?limit=${scanLimit}`;
 
-    if (
-      /^\d{8}$/.test(
-        requestedDate
-      )
-    ) {
+    if (/^\d{8}$/.test(requestedDate)) {
       scanUrl +=
         `&date=${encodeURIComponent(
           requestedDate
@@ -281,13 +236,14 @@ module.exports = async function handler(req, res) {
       scanResult =
         await fetchJson(
           scanUrl,
-          12000
+          10000
         );
+
     } catch (error) {
       return res.status(504).json({
         ok: false,
         version:
-          "LEADER_CYCLE_RANKINGS_V9_FAST",
+          "LEADER_CYCLE_RANKINGS_V8",
         error:
           "market-scan timeout",
         detail:
@@ -305,14 +261,12 @@ module.exports = async function handler(req, res) {
       !scanResult.ok ||
       !scan ||
       !scan.ok ||
-      !Array.isArray(
-        scan.candidates
-      )
+      !Array.isArray(scan.candidates)
     ) {
       return res.status(500).json({
         ok: false,
         version:
-          "LEADER_CYCLE_RANKINGS_V9_FAST",
+          "LEADER_CYCLE_RANKINGS_V8",
         error:
           "market-scan 호출 실패",
         detail: scan
@@ -320,30 +274,18 @@ module.exports = async function handler(req, res) {
     }
 
     const candidates =
-      scan.candidates
-        .slice(0, scanLimit)
-        .map(candidate => ({
-          ...candidate,
-          code:
-            normalizeCode(
-              candidate.code
-            ),
-          market:
-            normalizeMarket(
-              candidate.market
-            )
-        }))
-        .filter(candidate =>
-          /^\d{6}$/.test(
-            candidate.code
-          )
-        );
+      scan.candidates.slice(
+        0,
+        scanLimit
+      );
 
     if (!candidates.length) {
       return res.status(200).json({
         ok: true,
+
         version:
-          "LEADER_CYCLE_RANKINGS_V9_FAST",
+          "LEADER_CYCLE_RANKINGS_V8",
+
         date:
           scan.date || null,
 
@@ -371,66 +313,13 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    /* =========================================================
-       CANDIDATE MARKET MAP
-    ========================================================= */
-
-    const candidateMap =
-      new Map();
-
-    const histories =
-      new Map();
-
-    const historyDateSets =
-      new Map();
-
-    let needKospi = false;
-    let needKosdaq = false;
-    let hasUnknownMarket = false;
-
-    for (
-      const candidate of
-      candidates
-    ) {
-      candidateMap.set(
-        candidate.code,
-        candidate
+    const candidateCodes =
+      new Set(
+        candidates.map(
+          candidate =>
+            String(candidate.code)
+        )
       );
-
-      histories.set(
-        candidate.code,
-        []
-      );
-
-      historyDateSets.set(
-        candidate.code,
-        new Set()
-      );
-
-      if (
-        candidate.market ===
-        "KOSPI"
-      ) {
-        needKospi = true;
-      } else if (
-        candidate.market ===
-        "KOSDAQ"
-      ) {
-        needKosdaq = true;
-      } else {
-        hasUnknownMarket = true;
-      }
-    }
-
-    /*
-      market-scan에서 시장정보가 없는 후보가
-      하나라도 있으면 두 시장 모두 조회한다.
-    */
-
-    if (hasUnknownMarket) {
-      needKospi = true;
-      needKosdaq = true;
-    }
 
     /* =========================================================
        BASE DATE
@@ -445,20 +334,19 @@ module.exports = async function handler(req, res) {
 
     let baseDate;
 
-    if (
-      /^\d{8}$/.test(scanDate)
-    ) {
-      baseDate = new Date(
-        Number(
-          scanDate.slice(0, 4)
-        ),
-        Number(
-          scanDate.slice(4, 6)
-        ) - 1,
-        Number(
-          scanDate.slice(6, 8)
-        )
-      );
+    if (/^\d{8}$/.test(scanDate)) {
+      baseDate =
+        new Date(
+          Number(
+            scanDate.slice(0, 4)
+          ),
+          Number(
+            scanDate.slice(4, 6)
+          ) - 1,
+          Number(
+            scanDate.slice(6, 8)
+          )
+        );
     } else {
       const now =
         new Date();
@@ -477,11 +365,6 @@ module.exports = async function handler(req, res) {
 
     /* =========================================================
        DATE CANDIDATES
-
-       100 거래일 확보를 위해
-       달력 기준 165일.
-
-       주말은 애초에 제거.
     ========================================================= */
 
     const candidateDates = [];
@@ -514,7 +397,7 @@ module.exports = async function handler(req, res) {
     }
 
     /* =========================================================
-       KRX
+       KRX ENDPOINTS
     ========================================================= */
 
     const KOSPI_URL =
@@ -539,344 +422,165 @@ module.exports = async function handler(req, res) {
         const result =
           await fetchJson(
             url,
-            6500,
+            7000,
             {
               headers: {
-                AUTH_KEY: apiKey,
-                Accept:
-                  "application/json"
+                AUTH_KEY:
+                  apiKey
               }
             }
           );
 
-        let rows = [];
-
-        if (
+        const rows =
           Array.isArray(
             result.json?.OutBlock_1
           )
-        ) {
-          rows =
-            result.json.OutBlock_1;
-        } else if (
-          Array.isArray(
-            result.json?.output
-          )
-        ) {
-          rows =
-            result.json.output;
-        } else if (
-          Array.isArray(
-            result.json?.data
-          )
-        ) {
-          rows =
-            result.json.data;
-        }
+            ? result.json.OutBlock_1
+            : [];
 
         return {
           ok: result.ok,
-          status:
-            result.status,
           market,
           date,
           rows
         };
-      } catch (error) {
+
+      } catch {
         return {
           ok: false,
-          status: 0,
           market,
           date,
-          rows: [],
-          error:
-            String(
-              error?.message ||
-              error
-            )
+          rows: []
         };
       }
     }
 
+    /* =========================================================
+       HISTORY MAP
+    ========================================================= */
+
+    const histories =
+      new Map();
+
+    candidates.forEach(
+      candidate => {
+        histories.set(
+          String(candidate.code),
+          []
+        );
+      }
+    );
+
     function convertRow(
       row,
-      market,
-      fallbackDate
+      market
     ) {
-      const rawCode =
-        row.ISU_SRT_CD ||
-        row.SRT_CD ||
-        row.ISU_CD ||
-        "";
-
       const code =
         normalizeCode(
-          rawCode
+          row.ISU_CD
         );
 
       return {
         date:
           String(
-            row.BAS_DD ||
-            fallbackDate ||
-            ""
-          ).trim(),
+            row.BAS_DD || ""
+          ),
 
         code,
 
         name:
           String(
-            row.ISU_ABBRV ||
-            row.ISU_NM ||
-            row.ITMS_NM ||
-            ""
+            row.ISU_NM || ""
           ).trim(),
 
         market,
 
         open:
-          num(
-            row.TDD_OPNPRC ??
-            row.OPNPRC ??
-            row.OPEN
-          ),
+          num(row.TDD_OPNPRC),
 
         high:
-          num(
-            row.TDD_HGPRC ??
-            row.HGPRC ??
-            row.HIGH
-          ),
+          num(row.TDD_HGPRC),
 
         low:
-          num(
-            row.TDD_LWPRC ??
-            row.LWPRC ??
-            row.LOW
-          ),
+          num(row.TDD_LWPRC),
 
         close:
-          num(
-            row.TDD_CLSPRC ??
-            row.CLSPRC ??
-            row.CLOSE
-          ),
+          num(row.TDD_CLSPRC),
 
         changeRate:
-          num(
-            row.FLUC_RT ??
-            row.CHG_RT ??
-            row.CHANGE_RATE
-          ),
+          num(row.FLUC_RT),
 
         volume:
-          num(
-            row.ACC_TRDVOL ??
-            row.TRDVOL ??
-            row.VOLUME
-          ),
+          num(row.ACC_TRDVOL),
 
         tradingValue:
-          num(
-            row.ACC_TRDVAL ??
-            row.TRDVAL ??
-            row.TRADING_VALUE
-          ),
+          num(row.ACC_TRDVAL),
 
         marketCap:
-          num(
-            row.MKTCAP ??
-            row.MKT_CAP ??
-            row.MARKET_CAP
-          )
+          num(row.MKTCAP)
       };
     }
 
     /* =========================================================
-       2. FAST BULK HISTORY
+       2. BULK HISTORY V8
     ========================================================= */
 
     const REQUIRED_DAYS = 100;
+
     const MIN_ANALYSIS_DAYS = 60;
 
-    /*
-      16 날짜씩 처리.
-
-      KOSPI+KOSDAQ 모두 필요한 경우
-      최대 32 request 동시 실행.
-
-      market 정보가 한 시장뿐이면
-      최대 16 request.
-    */
-
-    const DATE_BATCH_SIZE = 16;
+    const DATE_BATCH_SIZE = 12;
 
     let krxRequests = 0;
-    let successfulKrxRequests = 0;
-    let failedKrxRequests = 0;
+
     let historyBatches = 0;
-    let processedDates = 0;
 
     let earlyStop = false;
+
     let earlyStopReason = null;
 
-    function addRow(
-      row,
-      market,
-      date
-    ) {
-      const converted =
-        convertRow(
-          row,
-          market,
-          date
-        );
-
-      const code =
-        converted.code;
-
-      const candidate =
-        candidateMap.get(code);
-
-      if (!candidate) {
-        return;
-      }
-
-      /*
-        market-scan에서 시장이 확실히 지정돼 있다면
-        다른 시장의 동일 코드 가능성 방지.
-      */
-
-      if (
-        candidate.market &&
-        candidate.market !==
-          market
-      ) {
-        return;
-      }
-
-      if (
-        !converted.date ||
-        converted.close <= 0
-      ) {
-        return;
-      }
-
-      const history =
-        histories.get(code);
-
-      const dateSet =
-        historyDateSets.get(code);
-
-      if (
-        !history ||
-        !dateSet
-      ) {
-        return;
-      }
-
-      if (
-        history.length >=
-        REQUIRED_DAYS
-      ) {
-        return;
-      }
-
-      if (
-        dateSet.has(
-          converted.date
-        )
-      ) {
-        return;
-      }
-
-      dateSet.add(
-        converted.date
-      );
-
-      history.push(
-        converted
-      );
-
-      /*
-        market 정보가 없었던 후보는
-        실제 발견 시장으로 확정.
-      */
-
-      if (
-        !candidate.market
-      ) {
-        candidate.market =
-          market;
-      }
-    }
-
-    /*
-      scan 순서대로 보면서
-      분석 가능한 후보 개수를 계산.
-    */
-
-    function usableCandidateCount() {
-      let count = 0;
+    function countHistoryState() {
+      let full = 0;
+      let usable = 0;
 
       for (
-        const candidate of
-        candidates
+        const candidate of candidates
       ) {
         const history =
           histories.get(
-            candidate.code
+            String(candidate.code)
           ) || [];
 
         if (
           history.length >=
           MIN_ANALYSIS_DAYS
         ) {
-          count++;
+          usable++;
         }
-      }
-
-      return count;
-    }
-
-    function fullCandidateCount() {
-      let count = 0;
-
-      for (
-        const candidate of
-        candidates
-      ) {
-        const history =
-          histories.get(
-            candidate.code
-          ) || [];
 
         if (
           history.length >=
           REQUIRED_DAYS
         ) {
-          count++;
+          full++;
         }
       }
 
-      return count;
+      return {
+        full,
+        usable
+      };
     }
 
-    /*
-      실제 scan 순서에서
-      사용할 limit개가 모두 100일 확보됐는지 검사.
-    */
-
-    function targetFullReady() {
+    function targetCandidatesComplete() {
       let found = 0;
 
       for (
-        const candidate of
-        candidates
+        const candidate of candidates
       ) {
         const history =
           histories.get(
-            candidate.code
+            String(candidate.code)
           ) || [];
 
         if (
@@ -885,9 +589,7 @@ module.exports = async function handler(req, res) {
         ) {
           found++;
 
-          if (
-            found >= limit
-          ) {
+          if (found >= limit) {
             return true;
           }
         }
@@ -902,11 +604,13 @@ module.exports = async function handler(req, res) {
       i += DATE_BATCH_SIZE
     ) {
       if (
-        targetFullReady()
+        targetCandidatesComplete()
       ) {
         earlyStop = true;
+
         earlyStopReason =
           "TARGET_FULL_HISTORY_READY";
+
         break;
       }
 
@@ -916,35 +620,22 @@ module.exports = async function handler(req, res) {
           i + DATE_BATCH_SIZE
         );
 
-      processedDates +=
-        batch.length;
-
       const jobs = [];
 
-      for (
-        const date of batch
-      ) {
-        if (needKospi) {
-          jobs.push(
-            fetchMarket(
-              date,
-              "KOSPI"
-            )
-          );
-        }
+      for (const date of batch) {
+        jobs.push(
+          fetchMarket(
+            date,
+            "KOSPI"
+          )
+        );
 
-        if (needKosdaq) {
-          jobs.push(
-            fetchMarket(
-              date,
-              "KOSDAQ"
-            )
-          );
-        }
-      }
-
-      if (!jobs.length) {
-        break;
+        jobs.push(
+          fetchMarket(
+            date,
+            "KOSDAQ"
+          )
+        );
       }
 
       krxRequests +=
@@ -953,57 +644,92 @@ module.exports = async function handler(req, res) {
       historyBatches++;
 
       const results =
-        await Promise.all(
-          jobs
-        );
+        await Promise.all(jobs);
 
       for (
-        const result of
-        results
+        const result of results
       ) {
         if (
           !result ||
           !result.ok ||
-          !Array.isArray(
-            result.rows
-          )
+          !Array.isArray(result.rows)
         ) {
-          failedKrxRequests++;
           continue;
         }
 
-        successfulKrxRequests++;
-
         for (
-          const row of
-          result.rows
+          const row of result.rows
         ) {
-          addRow(
-            row,
-            result.market,
-            result.date
-          );
+          const code =
+            normalizeCode(
+              row.ISU_CD
+            );
+
+          if (
+            !candidateCodes.has(code)
+          ) {
+            continue;
+          }
+
+          const history =
+            histories.get(code);
+
+          if (!history) {
+            continue;
+          }
+
+          if (
+            history.length >=
+            REQUIRED_DAYS
+          ) {
+            continue;
+          }
+
+          const converted =
+            convertRow(
+              row,
+              result.market
+            );
+
+          if (
+            !converted.date ||
+            converted.close <= 0
+          ) {
+            continue;
+          }
+
+          if (
+            history.some(
+              item =>
+                item.date ===
+                converted.date
+            )
+          ) {
+            continue;
+          }
+
+          history.push(converted);
         }
       }
 
       if (
-        targetFullReady()
+        targetCandidatesComplete()
       ) {
         earlyStop = true;
+
         earlyStopReason =
           "TARGET_FULL_HISTORY_READY";
+
         break;
       }
     }
 
-    const fullHistoryCandidates =
-      fullCandidateCount();
-
-    const minimumHistoryCandidates =
-      usableCandidateCount();
+    const historyState =
+      countHistoryState();
 
     /* =========================================================
        3. STOCK ANALYSIS
+       V7 SCORE ENGINE
     ========================================================= */
 
     function analyzeStock(
@@ -1011,14 +737,10 @@ module.exports = async function handler(req, res) {
       rawHistory
     ) {
       const code =
-        String(
-          candidate.code
-        );
+        String(candidate.code);
 
       if (
-        !Array.isArray(
-          rawHistory
-        ) ||
+        !Array.isArray(rawHistory) ||
         rawHistory.length <
           MIN_ANALYSIS_DAYS
       ) {
@@ -1031,10 +753,6 @@ module.exports = async function handler(req, res) {
             `history 부족 (${rawHistory?.length || 0}일)`
         };
       }
-
-      /* -------------------------------------------------------
-         최신 → 과거
-      ------------------------------------------------------- */
 
       const newestFirst =
         [...rawHistory]
@@ -1060,8 +778,7 @@ module.exports = async function handler(req, res) {
           );
 
         if (
-          slice.length <
-          period
+          slice.length < period
         ) {
           return null;
         }
@@ -1097,10 +814,6 @@ module.exports = async function handler(req, res) {
               )
           })
         );
-
-      /*
-        과거 → 최신
-      */
 
       const rows =
         [...chart].reverse();
@@ -1390,6 +1103,7 @@ module.exports = async function handler(req, res) {
 
       if (close > ma20) {
         leaderTrend += 6;
+
         leaderReasons.push(
           "현재가 MA20 위"
         );
@@ -1397,6 +1111,7 @@ module.exports = async function handler(req, res) {
 
       if (close > ma60) {
         leaderTrend += 6;
+
         leaderReasons.push(
           "현재가 MA60 위"
         );
@@ -1408,6 +1123,7 @@ module.exports = async function handler(req, res) {
 
       if (ma20Rising) {
         leaderTrend += 6;
+
         leaderReasons.push(
           "MA20 상승"
         );
@@ -1415,6 +1131,7 @@ module.exports = async function handler(req, res) {
 
       if (ma60Rising) {
         leaderTrend += 6;
+
         leaderReasons.push(
           "MA60 상승"
         );
@@ -1891,7 +1608,7 @@ module.exports = async function handler(req, res) {
       const entryReasons = [];
       const entryWarnings = [];
 
-      /* TREND 25 */
+      /* A. TREND 25 */
 
       if (close > ma20) {
         entryTrend += 5;
@@ -1919,7 +1636,7 @@ module.exports = async function handler(req, res) {
         );
       }
 
-      /* SETUP 30 */
+      /* B. SETUP 30 */
 
       if (freshGoldenCross) {
         entrySetup += 12;
@@ -1988,7 +1705,7 @@ module.exports = async function handler(req, res) {
           30
         );
 
-      /* BREAKOUT 20 */
+      /* C. BREAKOUT 20 */
 
       if (breakout20) {
         entryBreakout += 12;
@@ -2027,7 +1744,7 @@ module.exports = async function handler(req, res) {
           20
         );
 
-      /* ACTIVITY 25 */
+      /* D. ACTIVITY 25 */
 
       if (valueRatio >= 2) {
         entryActivity += 15;
@@ -2076,7 +1793,7 @@ module.exports = async function handler(req, res) {
           25
         );
 
-      /* PENALTY */
+      /* E. PENALTY */
 
       if (return5 >= 20) {
         entryPenalty += 20;
@@ -2130,7 +1847,9 @@ module.exports = async function handler(req, res) {
         entryPenalty += 5;
       }
 
-      if (exhaustionScore >= 75) {
+      if (
+        exhaustionScore >= 75
+      ) {
         entryPenalty += 50;
 
         entryWarnings.push(
@@ -2262,8 +1981,7 @@ module.exports = async function handler(req, res) {
           candidate.name,
 
         market:
-          latest.market ||
-          candidate.market,
+          latest.market,
 
         date:
           latest.date,
@@ -2347,65 +2065,47 @@ module.exports = async function handler(req, res) {
 
           ma20To60Gap:
             Number(
-              ma20To60Gap.toFixed(
-                2
-              )
+              ma20To60Gap.toFixed(2)
             ),
 
           distance20:
             Number(
-              distance20.toFixed(
-                2
-              )
+              distance20.toFixed(2)
             ),
 
           distance60:
             Number(
-              distance60.toFixed(
-                2
-              )
+              distance60.toFixed(2)
             ),
 
           return5:
             Number(
-              return5.toFixed(
-                2
-              )
+              return5.toFixed(2)
             ),
 
           return10:
             Number(
-              return10.toFixed(
-                2
-              )
+              return10.toFixed(2)
             ),
 
           return20:
             Number(
-              return20.toFixed(
-                2
-              )
+              return20.toFixed(2)
             ),
 
           return60:
             Number(
-              return60.toFixed(
-                2
-              )
+              return60.toFixed(2)
             ),
 
           volumeRatio:
             Number(
-              volumeRatio.toFixed(
-                2
-              )
+              volumeRatio.toFixed(2)
             ),
 
           tradingValueRatio:
             Number(
-              valueRatio.toFixed(
-                2
-              )
+              valueRatio.toFixed(2)
             ),
 
           breakout20,
@@ -2469,19 +2169,17 @@ module.exports = async function handler(req, res) {
     const skipped = [];
 
     for (
-      const candidate of
-      candidates
+      const candidate of candidates
     ) {
       if (
-        analyzed.length >=
-        limit
+        analyzed.length >= limit
       ) {
         break;
       }
 
       const history =
         histories.get(
-          candidate.code
+          String(candidate.code)
         ) || [];
 
       if (
@@ -2490,13 +2188,10 @@ module.exports = async function handler(req, res) {
       ) {
         skipped.push({
           code:
-            candidate.code,
+            String(candidate.code),
 
           name:
             candidate.name,
-
-          market:
-            candidate.market,
 
           reason:
             `history 부족 (${history.length}일)`
@@ -2512,9 +2207,7 @@ module.exports = async function handler(req, res) {
         );
 
       if (result.ok) {
-        analyzed.push(
-          result
-        );
+        analyzed.push(result);
       } else {
         skipped.push({
           code:
@@ -2541,8 +2234,8 @@ module.exports = async function handler(req, res) {
           }
 
           if (
-            stock.scores
-              .exhaustion >= 75
+            stock.scores.exhaustion >=
+            75
           ) {
             return false;
           }
@@ -2561,7 +2254,7 @@ module.exports = async function handler(req, res) {
       );
 
     /* =========================================================
-       RANKINGS
+       FINAL RANKINGS
     ========================================================= */
 
     const entryRanking =
@@ -2601,8 +2294,8 @@ module.exports = async function handler(req, res) {
         .filter(
           stock =>
             !stock.blocked &&
-            stock.scores
-              .exhaustion < 75
+            stock.scores.exhaustion <
+              75
         )
         .sort(
           (a, b) => {
@@ -2650,8 +2343,8 @@ module.exports = async function handler(req, res) {
       [...analyzed]
         .filter(
           stock =>
-            stock.scores
-              .exhaustion >= 25
+            stock.scores.exhaustion >=
+            25
         )
         .sort(
           (a, b) =>
@@ -2661,31 +2354,6 @@ module.exports = async function handler(req, res) {
         .slice(0, 15);
 
     /* =========================================================
-       HISTORY DEBUG SUMMARY
-    ========================================================= */
-
-    const historySummary =
-      candidates
-        .slice(0, 15)
-        .map(candidate => ({
-          code:
-            candidate.code,
-
-          name:
-            candidate.name,
-
-          market:
-            candidate.market,
-
-          days:
-            (
-              histories.get(
-                candidate.code
-              ) || []
-            ).length
-        }));
-
-    /* =========================================================
        RESPONSE
     ========================================================= */
 
@@ -2693,7 +2361,7 @@ module.exports = async function handler(req, res) {
       ok: true,
 
       version:
-        "LEADER_CYCLE_RANKINGS_V9_FAST",
+        "LEADER_CYCLE_RANKINGS_V8",
 
       date:
         scan.date || null,
@@ -2718,38 +2386,25 @@ module.exports = async function handler(req, res) {
           startedAt,
 
         architecture:
-          "MARKET_AWARE_BULK_KRX_V9",
+          "BULK_KRX_HISTORY_V8_EARLY_STOP",
 
-        stockDetailCalls:
-          0,
+        stockDetailCalls: 0,
 
-        marketHistoryCalls:
-          0,
+        marketHistoryCalls: 0,
 
         krxRequests,
 
-        successfulKrxRequests,
-
-        failedKrxRequests,
-
         historyBatches,
-
-        processedDates,
-
-        dateBatchSize:
-          DATE_BATCH_SIZE,
 
         earlyStop,
 
         earlyStopReason,
 
-        needKospi,
+        fullHistoryCandidates:
+          historyState.full,
 
-        needKosdaq,
-
-        fullHistoryCandidates,
-
-        minimumHistoryCandidates,
+        minimumHistoryCandidates:
+          historyState.usable,
 
         requestedCandidates:
           limit,
@@ -2838,16 +2493,12 @@ module.exports = async function handler(req, res) {
 
       failed: [],
 
-      skipped,
-
-      debug: {
-        historySummary
-      }
+      skipped
     });
 
   } catch (error) {
     console.error(
-      "RANKINGS V9 ERROR",
+      "RANKINGS V8 ERROR",
       error
     );
 
@@ -2855,7 +2506,7 @@ module.exports = async function handler(req, res) {
       ok: false,
 
       version:
-        "LEADER_CYCLE_RANKINGS_V9_FAST",
+        "LEADER_CYCLE_RANKINGS_V8",
 
       elapsedMs:
         Date.now() -
