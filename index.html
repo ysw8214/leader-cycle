@@ -2,6 +2,7 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8" />
+
   <meta
     name="viewport"
     content="width=device-width, initial-scale=1.0, viewport-fit=cover"
@@ -18,16 +19,24 @@
       --bg: #07090d;
       --panel: #11151c;
       --panel2: #171c25;
-      --line: #242b36;
+      --panel3: #1c222d;
+      --line: #252d3a;
+
       --text: #f5f7fa;
       --muted: #8d97a8;
+      --muted2: #626d80;
 
-      --red: #ff5364;
-      --green: #39d98a;
+      --red: #ff5c6c;
+      --green: #45d98b;
       --blue: #5d8cff;
       --yellow: #ffd166;
-      --purple: #a778ff;
+      --purple: #aa7cff;
       --orange: #ff9f43;
+
+      --ma5: #ffd166;
+      --ma10: #5d8cff;
+      --ma20: #45d98b;
+      --ma40: #aa7cff;
     }
 
     html {
@@ -41,7 +50,7 @@
         radial-gradient(
           circle at top right,
           rgba(93,140,255,.12),
-          transparent 35%
+          transparent 32%
         ),
         var(--bg);
 
@@ -56,109 +65,85 @@
       min-height: 100vh;
     }
 
+    button {
+      font: inherit;
+    }
+
     .app {
       width: 100%;
-      max-width: 760px;
+      max-width: 820px;
+
       margin: 0 auto;
 
       padding:
         calc(22px + env(safe-area-inset-top))
         16px
-        calc(40px + env(safe-area-inset-bottom));
+        calc(50px + env(safe-area-inset-bottom));
     }
 
+    /* =====================================================
+       HEADER
+    ===================================================== */
+
     header {
-      margin-bottom: 24px;
+      margin-bottom: 26px;
     }
 
     .brand {
-      font-size: 12px;
-      font-weight: 800;
-      letter-spacing: 2.4px;
       color: var(--blue);
+
+      font-size: 12px;
+      font-weight: 900;
+
+      letter-spacing: 3px;
+
       margin-bottom: 8px;
     }
 
     h1 {
       margin: 0;
-      font-size: 30px;
-      letter-spacing: -1.2px;
+
+      font-size: 32px;
+
+      letter-spacing: -1.4px;
     }
 
     .subtitle {
+      margin-top: 9px;
+
       color: var(--muted);
-      margin-top: 8px;
+
       font-size: 14px;
-      line-height: 1.5;
+      line-height: 1.55;
     }
 
     .status {
       display: flex;
       gap: 8px;
-      margin-top: 14px;
+
+      margin-top: 15px;
+
       flex-wrap: wrap;
     }
 
     .badge {
       padding: 7px 10px;
+
       border-radius: 999px;
+
       background: var(--panel2);
-      border: 1px solid var(--line);
+
+      border:
+        1px solid var(--line);
+
       color: var(--muted);
+
       font-size: 12px;
-      font-weight: 700;
-    }
-
-    .badge.ready {
-      color: var(--green);
-    }
-
-    .nav {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 8px;
-      margin-top: 18px;
-    }
-
-    .nav a {
-      text-decoration: none;
-      text-align: center;
-      color: var(--muted);
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      padding: 10px 4px;
-      font-size: 11px;
       font-weight: 800;
     }
 
-    .nav a:active {
-      transform: scale(.98);
-    }
-
-    section {
-      margin-top: 32px;
-      scroll-margin-top: 12px;
-    }
-
-    .section-head {
-      display: flex;
-      align-items: flex-end;
-      justify-content: space-between;
-      gap: 12px;
-      margin-bottom: 12px;
-    }
-
-    .section-title {
-      font-size: 20px;
-      font-weight: 850;
-      letter-spacing: -.5px;
-    }
-
-    .section-desc {
-      font-size: 11px;
-      color: var(--muted);
-      text-align: right;
+    .badge.live {
+      color: var(--green);
     }
 
     /* =====================================================
@@ -167,26 +152,115 @@
 
     .summary {
       display: grid;
-      grid-template-columns: repeat(2, 1fr);
+
+      grid-template-columns:
+        repeat(2, 1fr);
+
       gap: 10px;
+
+      margin-bottom: 28px;
     }
 
     .summary-card {
       background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 16px;
-      padding: 14px;
+
+      border:
+        1px solid var(--line);
+
+      border-radius: 17px;
+
+      padding: 15px;
     }
 
     .summary-label {
-      font-size: 11px;
       color: var(--muted);
+
+      font-size: 11px;
     }
 
     .summary-value {
       margin-top: 5px;
+
+      font-size: 22px;
+      font-weight: 900;
+    }
+
+    /* =====================================================
+       NAV
+    ===================================================== */
+
+    .nav {
+      display: flex;
+
+      gap: 8px;
+
+      overflow-x: auto;
+
+      padding-bottom: 5px;
+
+      margin-bottom: 30px;
+
+      scrollbar-width: none;
+    }
+
+    .nav::-webkit-scrollbar {
+      display: none;
+    }
+
+    .nav a {
+      flex: 0 0 auto;
+
+      text-decoration: none;
+
+      color: var(--muted);
+
+      background: var(--panel);
+
+      border:
+        1px solid var(--line);
+
+      border-radius: 999px;
+
+      padding: 9px 13px;
+
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    /* =====================================================
+       SECTION
+    ===================================================== */
+
+    section {
+      margin-top: 36px;
+    }
+
+    .section-head {
+      display: flex;
+
+      align-items: flex-end;
+
+      justify-content:
+        space-between;
+
+      gap: 15px;
+
+      margin-bottom: 14px;
+    }
+
+    .section-title {
       font-size: 21px;
       font-weight: 900;
+
+      letter-spacing: -.5px;
+    }
+
+    .section-desc {
+      color: var(--muted);
+
+      font-size: 12px;
+
+      text-align: right;
     }
 
     /* =====================================================
@@ -195,7 +269,7 @@
 
     .sector-list {
       display: grid;
-      gap: 10px;
+      gap: 11px;
     }
 
     .sector {
@@ -207,70 +281,118 @@
         ),
         var(--panel);
 
-      border: 1px solid var(--line);
-      border-radius: 18px;
+      border:
+        1px solid var(--line);
+
+      border-radius: 19px;
+
       padding: 16px;
+    }
+
+    .sector.exhaust {
+      border-color:
+        rgba(255,159,67,.32);
     }
 
     .sector-top {
       display: flex;
-      justify-content: space-between;
-      gap: 12px;
+
       align-items: flex-start;
+
+      justify-content:
+        space-between;
+
+      gap: 12px;
     }
 
     .rank {
       color: var(--muted);
+
       font-size: 12px;
+
       margin-bottom: 5px;
     }
 
     .sector-name {
       font-size: 20px;
-      font-weight: 850;
+      font-weight: 900;
     }
 
     .stage {
       font-size: 11px;
       font-weight: 900;
+
       padding: 6px 9px;
+
       border-radius: 999px;
-      background: rgba(93,140,255,.12);
+
+      background:
+        rgba(93,140,255,.12);
+
       color: var(--blue);
-      white-space: nowrap;
+    }
+
+    .stage.LEADER {
+      color: var(--red);
+
+      background:
+        rgba(255,92,108,.13);
     }
 
     .stage.STRONG {
-      background: rgba(255,83,100,.12);
       color: var(--red);
+
+      background:
+        rgba(255,92,108,.12);
     }
 
     .stage.EMERGING {
-      background: rgba(57,217,138,.12);
       color: var(--green);
+
+      background:
+        rgba(69,217,139,.12);
     }
 
-    .scores {
+    .stage.MATURE {
+      color: var(--orange);
+
+      background:
+        rgba(255,159,67,.12);
+    }
+
+    .stage.WEAK {
+      color: var(--muted);
+    }
+
+    .sector-scores {
       display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 8px;
+
+      grid-template-columns:
+        repeat(3, 1fr);
+
+      gap: 7px;
+
       margin-top: 14px;
     }
 
-    .score {
+    .sector-score {
       background: var(--panel2);
+
       border-radius: 12px;
-      padding: 11px;
+
+      padding: 10px;
     }
 
-    .score-label {
+    .sector-score-label {
       color: var(--muted);
-      font-size: 11px;
+
+      font-size: 10px;
     }
 
-    .score-value {
-      margin-top: 3px;
-      font-size: 22px;
+    .sector-score-value {
+      margin-top: 4px;
+
+      font-size: 20px;
       font-weight: 900;
     }
 
@@ -278,57 +400,220 @@
       color: var(--red);
     }
 
-    .early-color {
+    .early {
       color: var(--green);
+    }
+
+    .exhaustion {
+      color: var(--orange);
     }
 
     .metrics {
       display: flex;
-      gap: 14px;
-      margin-top: 12px;
-      color: var(--muted);
-      font-size: 12px;
+
+      gap: 13px;
+
       flex-wrap: wrap;
+
+      margin-top: 13px;
+
+      color: var(--muted);
+
+      font-size: 12px;
     }
 
     .leaders {
-      border-top: 1px solid var(--line);
       margin-top: 14px;
+
       padding-top: 12px;
+
+      border-top:
+        1px solid var(--line);
     }
 
     .leaders-title {
-      font-size: 11px;
       color: var(--muted);
-      margin-bottom: 8px;
+
+      font-size: 11px;
+
+      margin-bottom: 6px;
     }
 
-    .stock {
+    .mini-stock {
       display: flex;
-      justify-content: space-between;
+
       align-items: center;
-      padding: 8px 0;
+
+      justify-content:
+        space-between;
+
       gap: 10px;
+
+      padding: 8px 0;
     }
 
-    .stock + .stock {
-      border-top: 1px solid rgba(255,255,255,.04);
+    .mini-stock +
+    .mini-stock {
+      border-top:
+        1px solid rgba(255,255,255,.04);
+    }
+
+    .mini-stock-name {
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    .mini-stock-code {
+      margin-top: 2px;
+
+      color: var(--muted);
+
+      font-size: 10px;
+    }
+
+    .mini-stock-rate {
+      font-size: 14px;
+      font-weight: 900;
+    }
+
+    /* =====================================================
+       STOCK CARD
+    ===================================================== */
+
+    .stock-list {
+      display: grid;
+
+      gap: 13px;
+    }
+
+    .stock-card {
+      background:
+        linear-gradient(
+          145deg,
+          rgba(255,255,255,.018),
+          transparent
+        ),
+        var(--panel);
+
+      border:
+        1px solid var(--line);
+
+      border-radius: 20px;
+
+      padding: 16px;
+    }
+
+    .stock-card.entry {
+      border-color:
+        rgba(93,140,255,.4);
+    }
+
+    .stock-card.leader {
+      border-color:
+        rgba(255,92,108,.32);
+    }
+
+    .stock-card.early {
+      border-color:
+        rgba(69,217,139,.32);
+    }
+
+    .stock-card.exhaustion {
+      border-color:
+        rgba(255,159,67,.38);
+    }
+
+    .stock-top {
+      display: flex;
+
+      justify-content:
+        space-between;
+
+      gap: 12px;
+
+      align-items:
+        flex-start;
+    }
+
+    .stock-rank {
+      color: var(--muted);
+
+      font-size: 12px;
+
+      font-weight: 800;
+
+      margin-bottom: 6px;
     }
 
     .stock-name {
-      font-weight: 700;
-      font-size: 14px;
+      font-size: 20px;
+      font-weight: 900;
     }
 
     .stock-code {
+      margin-top: 4px;
+
       color: var(--muted);
-      font-size: 10px;
-      margin-top: 2px;
+
+      font-size: 12px;
     }
 
-    .stock-rate {
-      font-weight: 800;
-      font-size: 14px;
+    .main-score {
+      text-align: right;
+    }
+
+    .main-score-label {
+      color: var(--muted);
+
+      font-size: 11px;
+
+      font-weight: 900;
+    }
+
+    .main-score-value {
+      margin-top: 2px;
+
+      color: var(--blue);
+
+      font-size: 34px;
+      font-weight: 950;
+
+      line-height: 1;
+    }
+
+    .stock-card.leader
+    .main-score-value {
+      color: var(--red);
+    }
+
+    .stock-card.early
+    .main-score-value {
+      color: var(--green);
+    }
+
+    .stock-card.exhaustion
+    .main-score-value {
+      color: var(--orange);
+    }
+
+    .price-line {
+      display: flex;
+
+      align-items: baseline;
+
+      gap: 10px;
+
+      margin-top: 17px;
+    }
+
+    .price {
+      font-size: 23px;
+      font-weight: 900;
+    }
+
+    .rate {
+      font-size: 17px;
+      font-weight: 900;
     }
 
     .up {
@@ -340,172 +625,128 @@
     }
 
     /* =====================================================
-       STOCK RANKINGS
+       ALIGNMENT
     ===================================================== */
 
-    .ranking-block {
-      margin-top: 34px;
-    }
-
-    .ranking-list {
-      display: grid;
-      gap: 10px;
-    }
-
-    .ranking-card {
-      position: relative;
-      overflow: hidden;
-
-      background:
-        linear-gradient(
-          135deg,
-          rgba(255,255,255,.03),
-          transparent 60%
-        ),
-        var(--panel);
-
-      border: 1px solid var(--line);
-      border-radius: 18px;
-      padding: 15px;
-    }
-
-    .ranking-card.entry {
-      border-color: rgba(93,140,255,.28);
-    }
-
-    .ranking-card.leader {
-      border-color: rgba(255,209,102,.24);
-    }
-
-    .ranking-card.early {
-      border-color: rgba(57,217,138,.24);
-    }
-
-    .ranking-card.exhaustion {
-      border-color: rgba(255,83,100,.25);
-    }
-
-    .ranking-top {
+    .alignment-row {
       display: flex;
-      justify-content: space-between;
-      gap: 14px;
-      align-items: flex-start;
+
+      align-items: center;
+
+      justify-content:
+        space-between;
+
+      gap: 10px;
+
+      margin-top: 15px;
+
+      padding: 11px 12px;
+
+      border-radius: 13px;
+
+      background: var(--panel2);
     }
 
-    .ranking-left {
-      min-width: 0;
-    }
-
-    .ranking-number {
+    .alignment-title {
       color: var(--muted);
+
       font-size: 11px;
-      font-weight: 800;
-      margin-bottom: 5px;
     }
 
-    .ranking-name {
-      font-size: 18px;
+    .alignment {
+      font-size: 13px;
       font-weight: 900;
-      letter-spacing: -.4px;
     }
 
-    .ranking-code {
-      margin-top: 4px;
-      font-size: 11px;
-      color: var(--muted);
-    }
-
-    .main-score {
-      text-align: right;
-      flex-shrink: 0;
-    }
-
-    .main-score-label {
-      font-size: 10px;
-      color: var(--muted);
-      font-weight: 800;
-    }
-
-    .main-score-value {
-      margin-top: 2px;
-      font-size: 27px;
-      line-height: 1;
-      font-weight: 950;
-    }
-
-    .main-score-value.entry {
-      color: var(--blue);
-    }
-
-    .main-score-value.leader {
-      color: var(--yellow);
-    }
-
-    .main-score-value.early {
+    .alignment.PERFECT {
       color: var(--green);
     }
 
-    .main-score-value.exhaustion {
+    .alignment.BULLISH {
+      color: #6de3aa;
+    }
+
+    .alignment.FORMING {
+      color: var(--yellow);
+    }
+
+    .alignment.MIXED {
+      color: var(--muted);
+    }
+
+    .alignment.BROKEN {
       color: var(--red);
     }
 
-    .price-row {
-      display: flex;
-      align-items: baseline;
-      gap: 9px;
-      margin-top: 12px;
-    }
-
-    .price {
-      font-size: 17px;
-      font-weight: 850;
-    }
-
-    .change {
-      font-size: 13px;
-      font-weight: 850;
-    }
+    /* =====================================================
+       SCORE GRID
+    ===================================================== */
 
     .score-grid {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 6px;
-      margin-top: 13px;
+
+      grid-template-columns:
+        repeat(4, 1fr);
+
+      gap: 7px;
+
+      margin-top: 12px;
     }
 
-    .mini-score {
+    .score-box {
       background: var(--panel2);
-      border-radius: 10px;
-      padding: 9px 5px;
+
+      border-radius: 12px;
+
+      padding: 10px 5px;
+
       text-align: center;
     }
 
-    .mini-label {
+    .score-box-label {
       color: var(--muted);
-      font-size: 9px;
-      font-weight: 800;
-    }
 
-    .mini-value {
-      margin-top: 3px;
-      font-size: 14px;
+      font-size: 9px;
       font-weight: 900;
     }
 
+    .score-box-value {
+      margin-top: 5px;
+
+      font-size: 17px;
+      font-weight: 900;
+    }
+
+    /* =====================================================
+       INDICATORS
+    ===================================================== */
+
     .indicator-grid {
       display: grid;
-      grid-template-columns: repeat(2, 1fr);
+
+      grid-template-columns:
+        repeat(2, 1fr);
+
       gap: 7px;
-      margin-top: 9px;
+
+      margin-top: 10px;
     }
 
     .indicator {
       display: flex;
-      justify-content: space-between;
+
+      justify-content:
+        space-between;
+
       gap: 8px;
-      padding: 8px 10px;
-      border-radius: 10px;
-      background: rgba(255,255,255,.025);
+
+      background:
+        rgba(255,255,255,.025);
+
+      border-radius: 11px;
+
+      padding: 9px 10px;
+
       font-size: 11px;
     }
 
@@ -514,68 +755,161 @@
     }
 
     .indicator-value {
-      font-weight: 800;
-    }
-
-    .history-line {
-      margin-top: 10px;
-      color: #667184;
-      font-size: 10px;
+      font-weight: 850;
     }
 
     /* =====================================================
-       LOADING / ERROR
+       CHART
     ===================================================== */
 
+    .chart-wrap {
+      margin-top: 14px;
+
+      background:
+        #0b0e14;
+
+      border:
+        1px solid rgba(255,255,255,.05);
+
+      border-radius: 14px;
+
+      padding:
+        10px 8px 8px;
+    }
+
+    .chart-head {
+      display: flex;
+
+      justify-content:
+        space-between;
+
+      align-items: center;
+
+      gap: 8px;
+
+      margin-bottom: 8px;
+    }
+
+    .chart-title {
+      color: var(--muted);
+
+      font-size: 10px;
+      font-weight: 800;
+    }
+
+    .legend {
+      display: flex;
+
+      gap: 8px;
+
+      flex-wrap: wrap;
+
+      justify-content:
+        flex-end;
+    }
+
+    .legend-item {
+      font-size: 9px;
+
+      font-weight: 800;
+    }
+
+    .legend-item.close {
+      color: white;
+    }
+
+    .legend-item.ma5 {
+      color: var(--ma5);
+    }
+
+    .legend-item.ma10 {
+      color: var(--ma10);
+    }
+
+    .legend-item.ma20 {
+      color: var(--ma20);
+    }
+
+    .legend-item.ma40 {
+      color: var(--ma40);
+    }
+
+    canvas {
+      display: block;
+
+      width: 100%;
+
+      height: 170px;
+    }
+
+    /* =====================================================
+       FOOT
+    ===================================================== */
+
+    .stock-foot {
+      margin-top: 11px;
+
+      color: var(--muted2);
+
+      font-size: 10px;
+    }
+
     .loading {
-      padding: 50px 20px;
+      padding: 60px 20px;
+
       text-align: center;
+
       color: var(--muted);
     }
 
     .error {
-      color: var(--red);
-      background: rgba(255,83,100,.08);
-      border: 1px solid rgba(255,83,100,.25);
-      border-radius: 14px;
       padding: 16px;
-      line-height: 1.6;
-      margin-top: 12px;
-    }
 
-    .sub-error {
-      color: var(--muted);
-      background: var(--panel);
-      border: 1px solid var(--line);
       border-radius: 14px;
-      padding: 14px;
-      line-height: 1.5;
-      font-size: 12px;
+
+      border:
+        1px solid rgba(255,92,108,.3);
+
+      background:
+        rgba(255,92,108,.08);
+
+      color: var(--red);
+
+      line-height: 1.6;
     }
 
     footer {
-      color: #596273;
+      margin-top: 45px;
+
       text-align: center;
-      font-size: 11px;
-      margin-top: 40px;
+
+      color: #596273;
+
+      font-size: 10px;
     }
 
-    @media (max-width: 420px) {
+    @media (
+      max-width: 430px
+    ) {
       .app {
         padding-left: 13px;
         padding-right: 13px;
       }
 
       h1 {
-        font-size: 28px;
+        font-size: 29px;
       }
 
-      .ranking-name {
-        font-size: 17px;
+      .score-grid {
+        gap: 5px;
       }
 
-      .main-score-value {
-        font-size: 25px;
+      .score-box-value {
+        font-size: 16px;
+      }
+
+      canvas {
+        height: 155px;
       }
     }
   </style>
@@ -586,6 +920,7 @@
 <div class="app">
 
   <header>
+
     <div class="brand">
       LEADER CYCLE
     </div>
@@ -595,7 +930,7 @@
     </h1>
 
     <div class="subtitle">
-      현재 주도 섹터부터 공세 시작 종목까지 한 번에 추적합니다.
+      섹터 사이클과 종목의 진입·주도·초기·소진 구간을 추적합니다.
     </div>
 
     <div
@@ -603,38 +938,48 @@
       class="status"
     ></div>
 
-    <div class="nav">
-      <a href="#sector-current">
-        🔥 주도섹터
-      </a>
-
-      <a href="#entry-ranking">
-        🚀 ENTRY
-      </a>
-
-      <a href="#leader-ranking">
-        👑 LEADER
-      </a>
-
-      <a href="#early-ranking">
-        🌱 EARLY
-      </a>
-
-      <a href="#exhaustion-ranking">
-        ⚠️ 소진
-      </a>
-
-      <a href="#sector-radar">
-        📡 차기섹터
-      </a>
-    </div>
   </header>
 
 
+  <div class="nav">
+
+    <a href="#sector-current">
+      🔥 주도섹터
+    </a>
+
+    <a href="#sector-early">
+      🌱 차기섹터
+    </a>
+
+    <a href="#sector-exhaustion">
+      ⚠️ 종료위험
+    </a>
+
+    <a href="#entry">
+      🚀 ENTRY
+    </a>
+
+    <a href="#leader">
+      👑 LEADER
+    </a>
+
+    <a href="#early">
+      🌱 EARLY
+    </a>
+
+    <a href="#exhaustion">
+      ⚠️ EXHAUST
+    </a>
+
+  </div>
+
+
   <div id="app">
+
     <div class="loading">
       시장 데이터 분석 중...
     </div>
+
   </div>
 
 
@@ -646,6 +991,10 @@
 
 
 <script>
+
+/* =========================================================
+   API
+========================================================= */
 
 const SECTOR_API =
   "/api/sector-scan";
@@ -659,6 +1008,7 @@ const RANKING_API =
 ========================================================= */
 
 function number(value) {
+
   const n =
     Number(value);
 
@@ -669,18 +1019,35 @@ function number(value) {
 
 
 function escapeHTML(value) {
+
   return String(
     value ?? ""
   )
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#039;");
+    .replaceAll(
+      "&",
+      "&amp;"
+    )
+    .replaceAll(
+      "<",
+      "&lt;"
+    )
+    .replaceAll(
+      ">",
+      "&gt;"
+    )
+    .replaceAll(
+      '"',
+      "&quot;"
+    )
+    .replaceAll(
+      "'",
+      "&#039;"
+    );
 }
 
 
 function formatRate(value) {
+
   const n =
     number(value);
 
@@ -692,41 +1059,48 @@ function formatRate(value) {
 }
 
 
-function formatMoney(value) {
-  const n =
-    number(value);
-
-  if (n >= 1e12) {
-    return (
-      n / 1e12
-    ).toFixed(1) + "조";
-  }
-
-  if (n >= 1e8) {
-    return (
-      n / 1e8
-    ).toFixed(0) + "억";
-  }
-
-  if (n >= 1e4) {
-    return (
-      n / 1e4
-    ).toFixed(0) + "만";
-  }
-
-  return Math.round(n)
-    .toLocaleString();
-}
-
-
 function formatPrice(value) {
+
   return Math.round(
     number(value)
   ).toLocaleString() + "원";
 }
 
 
+function formatMoney(value) {
+
+  const n =
+    number(value);
+
+  if (n >= 1e12) {
+
+    return (
+      n / 1e12
+    ).toFixed(1) + "조";
+  }
+
+  if (n >= 1e8) {
+
+    return (
+      n / 1e8
+    ).toFixed(0) + "억";
+  }
+
+  if (n >= 1e4) {
+
+    return (
+      n / 1e4
+    ).toFixed(0) + "만";
+  }
+
+  return Math.round(
+    n
+  ).toLocaleString();
+}
+
+
 function rateClass(value) {
+
   const n =
     number(value);
 
@@ -743,38 +1117,35 @@ function rateClass(value) {
 
 
 /* =========================================================
-   SECTOR STOCK
+   SECTOR MINI STOCK
 ========================================================= */
 
-function stockHTML(stock) {
-  const rate =
-    number(
-      stock.changeRate
-    );
+function miniStockHTML(stock) {
 
   return `
-    <div class="stock">
+    <div class="mini-stock">
 
       <div>
-        <div class="stock-name">
-          ${escapeHTML(
-            stock.name || "-"
-          )}
+
+        <div class="mini-stock-name">
+          ${escapeHTML(stock.name || "-")}
         </div>
 
-        <div class="stock-code">
-          ${escapeHTML(
-            stock.code || ""
-          )}
+        <div class="mini-stock-code">
+          ${escapeHTML(stock.code || "")}
           ·
-          ${escapeHTML(
-            stock.market || ""
-          )}
+          ${escapeHTML(stock.market || "")}
         </div>
+
       </div>
 
-      <div class="stock-rate ${rateClass(rate)}">
-        ${formatRate(rate)}
+      <div
+        class="
+          mini-stock-rate
+          ${rateClass(stock.changeRate)}
+        "
+      >
+        ${formatRate(stock.changeRate)}
       </div>
 
     </div>
@@ -788,8 +1159,10 @@ function stockHTML(stock) {
 
 function sectorHTML(
   sector,
-  index
+  index,
+  type = "normal"
 ) {
+
   const leaders =
     Array.isArray(
       sector.leaders
@@ -797,12 +1170,26 @@ function sectorHTML(
       ? sector.leaders
       : [];
 
+  const exhaust =
+    number(
+      sector.exhaustion ??
+      sector.scores?.exhaustion
+    );
+
   return `
-    <div class="sector">
+    <div
+      class="
+        sector
+        ${type === "exhaustion"
+          ? "exhaust"
+          : ""}
+      "
+    >
 
       <div class="sector-top">
 
         <div>
+
           <div class="rank">
             #${index + 1}
           </div>
@@ -814,11 +1201,18 @@ function sectorHTML(
               "-"
             )}
           </div>
+
         </div>
 
-        <div class="stage ${escapeHTML(
-          sector.stage || ""
-        )}">
+        <div
+          class="
+            stage
+            ${escapeHTML(
+              sector.stage ||
+              "WATCH"
+            )}
+          "
+        >
           ${escapeHTML(
             sector.stage ||
             "WATCH"
@@ -828,31 +1222,50 @@ function sectorHTML(
       </div>
 
 
-      <div class="scores">
+      <div class="sector-scores">
 
-        <div class="score">
-          <div class="score-label">
-            HAN · 현재 주도력
+        <div class="sector-score">
+
+          <div class="sector-score-label">
+            HAN
           </div>
 
-          <div class="score-value han">
+          <div class="sector-score-value han">
             ${number(
-              sector.han
-            ).toFixed(1)}
+              sector.han ??
+              sector.scores?.han
+            )}
           </div>
+
         </div>
 
 
-        <div class="score">
-          <div class="score-label">
-            EARLY · 선행 신호
+        <div class="sector-score">
+
+          <div class="sector-score-label">
+            EARLY
           </div>
 
-          <div class="score-value early-color">
+          <div class="sector-score-value early">
             ${number(
-              sector.early
-            ).toFixed(1)}
+              sector.early ??
+              sector.scores?.early
+            )}
           </div>
+
+        </div>
+
+
+        <div class="sector-score">
+
+          <div class="sector-score-label">
+            EXHAUST
+          </div>
+
+          <div class="sector-score-value exhaustion">
+            ${exhaust}
+          </div>
+
         </div>
 
       </div>
@@ -861,25 +1274,29 @@ function sectorHTML(
       <div class="metrics">
 
         <span>
-          종목 ${number(
+          종목
+          ${number(
             sector.stockCount
           )}개
         </span>
 
         <span>
-          상승비율 ${number(
+          상승비율
+          ${number(
             sector.advanceRatio
           ).toFixed(1)}%
         </span>
 
         <span>
-          평균 ${formatRate(
+          평균
+          ${formatRate(
             sector.averageChangeRate
           )}
         </span>
 
         <span>
-          거래비중 ${number(
+          거래비중
+          ${number(
             sector.tradingShare
           ).toFixed(1)}%
         </span>
@@ -899,7 +1316,7 @@ function sectorHTML(
               ${
                 leaders
                   .slice(0, 5)
-                  .map(stockHTML)
+                  .map(miniStockHTML)
                   .join("")
               }
 
@@ -921,8 +1338,10 @@ function sectorSectionHTML(
   id,
   title,
   desc,
-  sectors
+  sectors,
+  type = "normal"
 ) {
+
   if (
     !Array.isArray(sectors) ||
     !sectors.length
@@ -950,311 +1369,10 @@ function sectorSectionHTML(
         ${
           sectors
             .slice(0, 10)
-            .map(sectorHTML)
-            .join("")
-        }
-
-      </div>
-
-    </section>
-  `;
-}
-
-
-/* =========================================================
-   RANKING CARD
-========================================================= */
-
-function rankingCardHTML(
-  stock,
-  index,
-  type
-) {
-  const scores =
-    stock.scores || {};
-
-  const indicators =
-    stock.indicators || {};
-
-  const mainScore =
-    number(
-      scores[type]
-    );
-
-  const changeRate =
-    number(
-      stock.changeRate
-    );
-
-  return `
-    <div class="ranking-card ${type}">
-
-      <div class="ranking-top">
-
-        <div class="ranking-left">
-
-          <div class="ranking-number">
-            #${index + 1}
-          </div>
-
-          <div class="ranking-name">
-            ${escapeHTML(
-              stock.name || "-"
-            )}
-          </div>
-
-          <div class="ranking-code">
-            ${escapeHTML(
-              stock.code || ""
-            )}
-            ·
-            ${escapeHTML(
-              stock.market || ""
-            )}
-          </div>
-
-        </div>
-
-
-        <div class="main-score">
-
-          <div class="main-score-label">
-            ${type.toUpperCase()}
-          </div>
-
-          <div class="main-score-value ${type}">
-            ${mainScore.toFixed(1)}
-          </div>
-
-        </div>
-
-      </div>
-
-
-      <div class="price-row">
-
-        <div class="price">
-          ${formatPrice(
-            stock.close
-          )}
-        </div>
-
-        <div class="change ${rateClass(changeRate)}">
-          ${formatRate(
-            changeRate
-          )}
-        </div>
-
-      </div>
-
-
-      <div class="score-grid">
-
-        <div class="mini-score">
-          <div class="mini-label">
-            ENTRY
-          </div>
-          <div class="mini-value">
-            ${number(
-              scores.entry
-            ).toFixed(1)}
-          </div>
-        </div>
-
-        <div class="mini-score">
-          <div class="mini-label">
-            LEADER
-          </div>
-          <div class="mini-value">
-            ${number(
-              scores.leader
-            ).toFixed(1)}
-          </div>
-        </div>
-
-        <div class="mini-score">
-          <div class="mini-label">
-            EARLY
-          </div>
-          <div class="mini-value">
-            ${number(
-              scores.early
-            ).toFixed(1)}
-          </div>
-        </div>
-
-        <div class="mini-score">
-          <div class="mini-label">
-            EXHAUST
-          </div>
-          <div class="mini-value">
-            ${number(
-              scores.exhaustion
-            ).toFixed(1)}
-          </div>
-        </div>
-
-      </div>
-
-
-      <div class="indicator-grid">
-
-        <div class="indicator">
-          <span class="indicator-label">
-            5일 수익률
-          </span>
-
-          <span class="indicator-value ${rateClass(
-            indicators.return5
-          )}">
-            ${formatRate(
-              indicators.return5
-            )}
-          </span>
-        </div>
-
-
-        <div class="indicator">
-          <span class="indicator-label">
-            20일 수익률
-          </span>
-
-          <span class="indicator-value ${rateClass(
-            indicators.return20
-          )}">
-            ${formatRate(
-              indicators.return20
-            )}
-          </span>
-        </div>
-
-
-        <div class="indicator">
-          <span class="indicator-label">
-            MA20 이격
-          </span>
-
-          <span class="indicator-value">
-            ${formatRate(
-              indicators.distanceMa20
-            )}
-          </span>
-        </div>
-
-
-        <div class="indicator">
-          <span class="indicator-label">
-            거래량 배수
-          </span>
-
-          <span class="indicator-value">
-            ${number(
-              indicators.volumeRatio
-            ).toFixed(2)}x
-          </span>
-        </div>
-
-
-        <div class="indicator">
-          <span class="indicator-label">
-            거래대금 배수
-          </span>
-
-          <span class="indicator-value">
-            ${number(
-              indicators.tradingValueRatio
-            ).toFixed(2)}x
-          </span>
-        </div>
-
-
-        <div class="indicator">
-          <span class="indicator-label">
-            거래대금
-          </span>
-
-          <span class="indicator-value">
-            ${formatMoney(
-              stock.tradingValue
-            )}
-          </span>
-        </div>
-
-      </div>
-
-
-      <div class="history-line">
-        히스토리 ${number(
-          stock.historyDays
-        )}일
-        ·
-        Discovery ${number(
-          stock.discoveryScore
-        ).toFixed(1)}
-      </div>
-
-    </div>
-  `;
-}
-
-
-/* =========================================================
-   RANKING SECTION
-========================================================= */
-
-function rankingSectionHTML(
-  id,
-  title,
-  desc,
-  ranking,
-  type
-) {
-  if (
-    !Array.isArray(ranking) ||
-    !ranking.length
-  ) {
-    return `
-      <section id="${id}">
-        <div class="section-head">
-          <div class="section-title">
-            ${title}
-          </div>
-        </div>
-
-        <div class="sub-error">
-          표시할 랭킹 데이터가 없습니다.
-        </div>
-      </section>
-    `;
-  }
-
-  return `
-    <section
-      id="${id}"
-      class="ranking-block"
-    >
-
-      <div class="section-head">
-
-        <div class="section-title">
-          ${title}
-        </div>
-
-        <div class="section-desc">
-          ${desc}
-        </div>
-
-      </div>
-
-      <div class="ranking-list">
-
-        ${
-          ranking
-            .slice(0, 10)
             .map(
-              (stock, index) =>
-                rankingCardHTML(
-                  stock,
+              (sector, index) =>
+                sectorHTML(
+                  sector,
                   index,
                   type
                 )
@@ -1270,47 +1388,958 @@ function rankingSectionHTML(
 
 
 /* =========================================================
-   LOAD API
+   ALIGNMENT
 ========================================================= */
 
-async function fetchAPI(url) {
-  const response =
-    await fetch(
-      url,
-      {
-        cache:
-          "no-store"
-      }
-    );
+function alignmentIcon(
+  alignment
+) {
 
-  if (!response.ok) {
-    throw new Error(
-      `${url} HTTP ${response.status}`
-    );
+  switch (alignment) {
+
+    case "PERFECT":
+      return "🟢";
+
+    case "BULLISH":
+      return "🟢";
+
+    case "FORMING":
+      return "🟡";
+
+    case "BROKEN":
+      return "🔴";
+
+    default:
+      return "⚪";
   }
-
-  const data =
-    await response.json();
-
-  if (
-    !data ||
-    data.ok === false
-  ) {
-    throw new Error(
-      data?.error ||
-      `${url} API 응답 오류`
-    );
-  }
-
-  return data;
 }
 
 
 /* =========================================================
-   MAIN
+   STOCK CARD
+========================================================= */
+
+let chartCounter = 0;
+
+const chartJobs = [];
+
+
+function stockHTML(
+  stock,
+  type
+) {
+
+  const score =
+    number(
+      stock.scores?.[type]
+    );
+
+  const indicators =
+    stock.indicators || {};
+
+  const chartId =
+    `chart-${++chartCounter}`;
+
+  chartJobs.push({
+    id:
+      chartId,
+
+    chart:
+      Array.isArray(
+        stock.chart
+      )
+        ? stock.chart
+        : []
+  });
+
+  return `
+    <div class="stock-card ${type}">
+
+      <div class="stock-top">
+
+        <div>
+
+          <div class="stock-rank">
+            #${number(stock.rank)}
+          </div>
+
+          <div class="stock-name">
+            ${escapeHTML(
+              stock.name ||
+              "-"
+            )}
+          </div>
+
+          <div class="stock-code">
+            ${escapeHTML(
+              stock.code ||
+              ""
+            )}
+            ·
+            ${escapeHTML(
+              stock.market ||
+              ""
+            )}
+          </div>
+
+        </div>
+
+
+        <div class="main-score">
+
+          <div class="main-score-label">
+            ${type.toUpperCase()}
+          </div>
+
+          <div class="main-score-value">
+            ${score.toFixed(1)}
+          </div>
+
+        </div>
+
+      </div>
+
+
+      <div class="price-line">
+
+        <div class="price">
+          ${formatPrice(
+            stock.close
+          )}
+        </div>
+
+        <div
+          class="
+            rate
+            ${rateClass(
+              stock.changeRate
+            )}
+          "
+        >
+          ${formatRate(
+            stock.changeRate
+          )}
+        </div>
+
+      </div>
+
+
+      <div class="alignment-row">
+
+        <div class="alignment-title">
+          이동평균 배열
+        </div>
+
+        <div
+          class="
+            alignment
+            ${escapeHTML(
+              stock.alignment ||
+              "MIXED"
+            )}
+          "
+        >
+          ${alignmentIcon(
+            stock.alignment
+          )}
+          ${escapeHTML(
+            stock.alignmentLabel ||
+            "혼조"
+          )}
+        </div>
+
+      </div>
+
+
+      <div class="score-grid">
+
+        <div class="score-box">
+
+          <div class="score-box-label">
+            ENTRY
+          </div>
+
+          <div class="score-box-value">
+            ${number(
+              stock.scores?.entry
+            ).toFixed(1)}
+          </div>
+
+        </div>
+
+
+        <div class="score-box">
+
+          <div class="score-box-label">
+            LEADER
+          </div>
+
+          <div class="score-box-value">
+            ${number(
+              stock.scores?.leader
+            ).toFixed(1)}
+          </div>
+
+        </div>
+
+
+        <div class="score-box">
+
+          <div class="score-box-label">
+            EARLY
+          </div>
+
+          <div class="score-box-value">
+            ${number(
+              stock.scores?.early
+            ).toFixed(1)}
+          </div>
+
+        </div>
+
+
+        <div class="score-box">
+
+          <div class="score-box-label">
+            EXHAUST
+          </div>
+
+          <div class="score-box-value">
+            ${number(
+              stock.scores?.exhaustion
+            ).toFixed(1)}
+          </div>
+
+        </div>
+
+      </div>
+
+
+      <div class="indicator-grid">
+
+        <div class="indicator">
+
+          <span class="indicator-label">
+            5일 수익률
+          </span>
+
+          <span
+            class="
+              indicator-value
+              ${rateClass(
+                indicators.return5
+              )}
+            "
+          >
+            ${formatRate(
+              indicators.return5
+            )}
+          </span>
+
+        </div>
+
+
+        <div class="indicator">
+
+          <span class="indicator-label">
+            20일 수익률
+          </span>
+
+          <span
+            class="
+              indicator-value
+              ${rateClass(
+                indicators.return20
+              )}
+            "
+          >
+            ${formatRate(
+              indicators.return20
+            )}
+          </span>
+
+        </div>
+
+
+        <div class="indicator">
+
+          <span class="indicator-label">
+            MA20 이격
+          </span>
+
+          <span class="indicator-value">
+            ${formatRate(
+              indicators.distanceMa20
+            )}
+          </span>
+
+        </div>
+
+
+        <div class="indicator">
+
+          <span class="indicator-label">
+            거래량 배수
+          </span>
+
+          <span class="indicator-value">
+            ${number(
+              indicators.volumeRatio
+            ).toFixed(2)}x
+          </span>
+
+        </div>
+
+
+        <div class="indicator">
+
+          <span class="indicator-label">
+            거래대금 배수
+          </span>
+
+          <span class="indicator-value">
+            ${number(
+              indicators.tradingValueRatio
+            ).toFixed(2)}x
+          </span>
+
+        </div>
+
+
+        <div class="indicator">
+
+          <span class="indicator-label">
+            거래대금
+          </span>
+
+          <span class="indicator-value">
+            ${formatMoney(
+              stock.tradingValue
+            )}
+          </span>
+
+        </div>
+
+      </div>
+
+
+      <div class="chart-wrap">
+
+        <div class="chart-head">
+
+          <div class="chart-title">
+            60거래일 추세
+          </div>
+
+          <div class="legend">
+
+            <span class="legend-item close">
+              PRICE
+            </span>
+
+            <span class="legend-item ma5">
+              MA5
+            </span>
+
+            <span class="legend-item ma10">
+              MA10
+            </span>
+
+            <span class="legend-item ma20">
+              MA20
+            </span>
+
+            <span class="legend-item ma40">
+              MA40
+            </span>
+
+          </div>
+
+        </div>
+
+        <canvas
+          id="${chartId}"
+        ></canvas>
+
+      </div>
+
+
+      <div class="stock-foot">
+        히스토리
+        ${number(
+          stock.historyDays
+        )}일
+        ·
+        Discovery
+        ${number(
+          stock.discoveryScore
+        ).toFixed(1)}
+      </div>
+
+    </div>
+  `;
+}
+
+
+/* =========================================================
+   STOCK SECTION
+========================================================= */
+
+function stockSectionHTML(
+  id,
+  title,
+  desc,
+  ranking,
+  type
+) {
+
+  if (
+    !Array.isArray(ranking) ||
+    !ranking.length
+  ) {
+    return "";
+  }
+
+  return `
+    <section id="${id}">
+
+      <div class="section-head">
+
+        <div class="section-title">
+          ${title}
+        </div>
+
+        <div class="section-desc">
+          ${desc}
+        </div>
+
+      </div>
+
+      <div class="stock-list">
+
+        ${
+          ranking
+            .slice(0, 10)
+            .map(
+              stock =>
+                stockHTML(
+                  stock,
+                  type
+                )
+            )
+            .join("")
+        }
+
+      </div>
+
+    </section>
+  `;
+}
+
+
+/* =========================================================
+   CANVAS CHART
+========================================================= */
+
+function drawChart(
+  canvas,
+  rows
+) {
+
+  if (
+    !canvas ||
+    !Array.isArray(rows) ||
+    rows.length < 2
+  ) {
+    return;
+  }
+
+  const rect =
+    canvas.getBoundingClientRect();
+
+  const dpr =
+    Math.max(
+      1,
+      window.devicePixelRatio ||
+      1
+    );
+
+  const width =
+    Math.max(
+      280,
+      rect.width
+    );
+
+  const height =
+    Math.max(
+      150,
+      rect.height
+    );
+
+  canvas.width =
+    Math.round(
+      width * dpr
+    );
+
+  canvas.height =
+    Math.round(
+      height * dpr
+    );
+
+  const ctx =
+    canvas.getContext(
+      "2d"
+    );
+
+  ctx.setTransform(
+    dpr,
+    0,
+    0,
+    dpr,
+    0,
+    0
+  );
+
+  ctx.clearRect(
+    0,
+    0,
+    width,
+    height
+  );
+
+  const padding = {
+    left: 7,
+    right: 7,
+    top: 8,
+    bottom: 14
+  };
+
+  const plotWidth =
+    width -
+    padding.left -
+    padding.right;
+
+  const plotHeight =
+    height -
+    padding.top -
+    padding.bottom;
+
+  const keys = [
+    "close",
+    "ma5",
+    "ma10",
+    "ma20",
+    "ma40"
+  ];
+
+  const values = [];
+
+  for (const row of rows) {
+
+    for (const key of keys) {
+
+      const value =
+        Number(
+          row?.[key]
+        );
+
+      if (
+        Number.isFinite(value) &&
+        value > 0
+      ) {
+        values.push(
+          value
+        );
+      }
+    }
+  }
+
+  if (!values.length) {
+    return;
+  }
+
+  let min =
+    Math.min(...values);
+
+  let max =
+    Math.max(...values);
+
+  if (min === max) {
+    min *= .98;
+    max *= 1.02;
+  }
+
+  const margin =
+    (
+      max - min
+    ) * 0.08;
+
+  min -= margin;
+  max += margin;
+
+  function x(index) {
+
+    if (
+      rows.length <= 1
+    ) {
+      return padding.left;
+    }
+
+    return (
+      padding.left +
+      (
+        index /
+        (
+          rows.length - 1
+        )
+      ) *
+      plotWidth
+    );
+  }
+
+  function y(value) {
+
+    return (
+      padding.top +
+      (
+        1 -
+        (
+          value - min
+        ) /
+        (
+          max - min
+        )
+      ) *
+      plotHeight
+    );
+  }
+
+  /* grid */
+
+  ctx.strokeStyle =
+    "rgba(255,255,255,.055)";
+
+  ctx.lineWidth = 1;
+
+  for (
+    let i = 0;
+    i <= 4;
+    i++
+  ) {
+
+    const gy =
+      padding.top +
+      (
+        plotHeight *
+        i /
+        4
+      );
+
+    ctx.beginPath();
+
+    ctx.moveTo(
+      padding.left,
+      gy
+    );
+
+    ctx.lineTo(
+      width -
+      padding.right,
+      gy
+    );
+
+    ctx.stroke();
+  }
+
+  /* line helper */
+
+  function drawLine(
+    key,
+    color,
+    lineWidth,
+    alpha = 1
+  ) {
+
+    ctx.beginPath();
+
+    ctx.strokeStyle =
+      color;
+
+    ctx.globalAlpha =
+      alpha;
+
+    ctx.lineWidth =
+      lineWidth;
+
+    ctx.lineJoin =
+      "round";
+
+    ctx.lineCap =
+      "round";
+
+    let started =
+      false;
+
+    rows.forEach(
+      (row, index) => {
+
+        const value =
+          Number(
+            row?.[key]
+          );
+
+        if (
+          !Number.isFinite(value) ||
+          value <= 0
+        ) {
+          started = false;
+          return;
+        }
+
+        const px =
+          x(index);
+
+        const py =
+          y(value);
+
+        if (!started) {
+
+          ctx.moveTo(
+            px,
+            py
+          );
+
+          started = true;
+
+        } else {
+
+          ctx.lineTo(
+            px,
+            py
+          );
+        }
+      }
+    );
+
+    ctx.stroke();
+
+    ctx.globalAlpha = 1;
+  }
+
+  /*
+    장기선 먼저,
+    가격선 마지막.
+  */
+
+  drawLine(
+    "ma40",
+    "#aa7cff",
+    1.5,
+    .9
+  );
+
+  drawLine(
+    "ma20",
+    "#45d98b",
+    1.5,
+    .9
+  );
+
+  drawLine(
+    "ma10",
+    "#5d8cff",
+    1.4,
+    .9
+  );
+
+  drawLine(
+    "ma5",
+    "#ffd166",
+    1.4,
+    .95
+  );
+
+  drawLine(
+    "close",
+    "#ffffff",
+    2.2,
+    1
+  );
+
+  /* latest point */
+
+  const latest =
+    rows[
+      rows.length - 1
+    ];
+
+  const latestClose =
+    Number(
+      latest?.close
+    );
+
+  if (
+    Number.isFinite(
+      latestClose
+    ) &&
+    latestClose > 0
+  ) {
+
+    ctx.beginPath();
+
+    ctx.fillStyle =
+      "#ffffff";
+
+    ctx.arc(
+      x(
+        rows.length - 1
+      ),
+      y(
+        latestClose
+      ),
+      3,
+      0,
+      Math.PI * 2
+    );
+
+    ctx.fill();
+  }
+
+  /* date */
+
+  const firstDate =
+    String(
+      rows[0]?.date ||
+      ""
+    );
+
+  const lastDate =
+    String(
+      latest?.date ||
+      ""
+    );
+
+  ctx.fillStyle =
+    "#626d80";
+
+  ctx.font =
+    "9px -apple-system, BlinkMacSystemFont, sans-serif";
+
+  ctx.textBaseline =
+    "bottom";
+
+  ctx.textAlign =
+    "left";
+
+  ctx.fillText(
+    firstDate.slice(4),
+    padding.left,
+    height
+  );
+
+  ctx.textAlign =
+    "right";
+
+  ctx.fillText(
+    lastDate.slice(4),
+    width -
+    padding.right,
+    height
+  );
+}
+
+
+/* =========================================================
+   DRAW ALL
+========================================================= */
+
+function drawAllCharts() {
+
+  for (
+    const job of chartJobs
+  ) {
+
+    const canvas =
+      document.getElementById(
+        job.id
+      );
+
+    drawChart(
+      canvas,
+      job.chart
+    );
+  }
+}
+
+
+/* =========================================================
+   SECTOR EXHAUSTION
+========================================================= */
+
+function getSectorExhaustion(
+  sectorData
+) {
+
+  /*
+    V3 API에 sectorExhaustionRanking이 있으면
+    그것을 우선 사용.
+  */
+
+  const direct =
+    sectorData
+      ?.sectorExhaustionRanking;
+
+  if (
+    Array.isArray(direct) &&
+    direct.length
+  ) {
+    return direct;
+  }
+
+  /*
+    아니면 sectors에서
+    exhaustion 점수 기준으로 생성.
+  */
+
+  const sectors =
+    Array.isArray(
+      sectorData?.sectors
+    )
+      ? sectorData.sectors
+      : [];
+
+  return sectors
+    .filter(
+      sector =>
+        number(
+          sector.exhaustion ??
+          sector.scores?.exhaustion
+        ) > 0
+    )
+    .sort(
+      (a, b) =>
+        number(
+          b.exhaustion ??
+          b.scores?.exhaustion
+        ) -
+        number(
+          a.exhaustion ??
+          a.scores?.exhaustion
+        )
+    )
+    .slice(
+      0,
+      10
+    );
+}
+
+
+/* =========================================================
+   LOAD
 ========================================================= */
 
 async function load() {
+
   const app =
     document.getElementById(
       "app"
@@ -1322,157 +2351,173 @@ async function load() {
     );
 
   try {
-    /*
-      둘을 동시에 호출해서
-      전체 로딩 시간을 줄인다.
-    */
 
-    const results =
-      await Promise.allSettled([
-        fetchAPI(
-          SECTOR_API
+    chartJobs.length = 0;
+
+    chartCounter = 0;
+
+
+    const [
+      sectorResponse,
+      rankingResponse
+    ] =
+      await Promise.all([
+
+        fetch(
+          SECTOR_API,
+          {
+            cache:
+              "no-store"
+          }
         ),
 
-        fetchAPI(
-          RANKING_API
+        fetch(
+          RANKING_API,
+          {
+            cache:
+              "no-store"
+          }
         )
       ]);
 
-    const sectorResult =
-      results[0];
-
-    const rankingResult =
-      results[1];
-
-    const sectorData =
-      sectorResult.status ===
-      "fulfilled"
-        ? sectorResult.value
-        : null;
-
-    const rankingData =
-      rankingResult.status ===
-      "fulfilled"
-        ? rankingResult.value
-        : null;
-
-
-    /*
-      둘 다 실패했을 때만
-      전체 에러 처리
-    */
 
     if (
-      !sectorData &&
-      !rankingData
+      !sectorResponse.ok
     ) {
       throw new Error(
-        [
-          sectorResult.reason?.message,
-          rankingResult.reason?.message
-        ]
-          .filter(Boolean)
-          .join(" / ")
+        `sector-scan HTTP ${sectorResponse.status}`
       );
     }
 
 
-    const displayDate =
-      rankingData?.date ||
-      sectorData?.date ||
-      "-";
-
-
-    const marketStocks =
-      number(
-        rankingData?.stats
-          ?.marketStocks ??
-        sectorData?.market
-          ?.stocks
+    if (
+      !rankingResponse.ok
+    ) {
+      throw new Error(
+        `rankings HTTP ${rankingResponse.status}`
       );
+    }
+
+
+    const sectorData =
+      await sectorResponse.json();
+
+    const rankingData =
+      await rankingResponse.json();
+
+
+    if (
+      !sectorData.ok
+    ) {
+      throw new Error(
+        sectorData.error ||
+        "sector-scan 오류"
+      );
+    }
+
+
+    if (
+      !rankingData.ok
+    ) {
+      throw new Error(
+        rankingData.error ||
+        "rankings 오류"
+      );
+    }
+
+
+    const currentLeaders =
+      Array.isArray(
+        sectorData.currentLeaders
+      )
+        ? sectorData.currentLeaders
+        : [];
+
+
+    const nextLeaderRadar =
+      Array.isArray(
+        sectorData.nextLeaderRadar
+      )
+        ? sectorData.nextLeaderRadar
+        : [];
+
+
+    const sectorExhaustion =
+      getSectorExhaustion(
+        sectorData
+      );
+
+
+    const entryRanking =
+      Array.isArray(
+        rankingData.entryRanking
+      )
+        ? rankingData.entryRanking
+        : [];
+
+
+    const leaderRanking =
+      Array.isArray(
+        rankingData.leaderRanking
+      )
+        ? rankingData.leaderRanking
+        : [];
+
+
+    const earlyRanking =
+      Array.isArray(
+        rankingData.earlyRanking
+      )
+        ? rankingData.earlyRanking
+        : [];
+
+
+    const exhaustionRanking =
+      Array.isArray(
+        rankingData.exhaustionRanking
+      )
+        ? rankingData.exhaustionRanking
+        : [];
+
+
+    const coverage =
+      sectorData.coverage ||
+      {};
+
+
+    const market =
+      sectorData.market ||
+      {};
 
 
     status.innerHTML = `
 
-      <div class="badge ready">
+      <div class="badge live">
         ● LIVE
       </div>
 
       <div class="badge">
-        기준일 ${escapeHTML(
-          displayDate
+        기준일
+        ${escapeHTML(
+          rankingData.date ||
+          sectorData.date ||
+          "-"
         )}
       </div>
 
       <div class="badge">
-        ${marketStocks.toLocaleString()} 종목
+        ${number(
+          market.stocks
+        ).toLocaleString()}
+        종목
       </div>
-
-      ${
-        rankingData
-          ? `
-            <div class="badge">
-              분석 ${number(
-                rankingData.stats
-                  ?.analyzed
-              )}종목
-            </div>
-          `
-          : ""
-      }
 
     `;
 
 
-    /* =====================================================
-       SUMMARY
-    ===================================================== */
-
-    const coverage =
-      sectorData?.coverage ||
-      {};
-
-    const sectorMarket =
-      sectorData?.market ||
-      {};
-
-    const rankingStats =
-      rankingData?.stats ||
-      {};
-
-    let html = `
+    app.innerHTML = `
 
       <div class="summary">
-
-        <div class="summary-card">
-
-          <div class="summary-label">
-            분석 종목
-          </div>
-
-          <div class="summary-value">
-            ${number(
-              rankingStats.analyzed
-            ).toLocaleString()}
-          </div>
-
-        </div>
-
-
-        <div class="summary-card">
-
-          <div class="summary-label">
-            분석 섹터
-          </div>
-
-          <div class="summary-value">
-            ${number(
-              sectorMarket.sectors
-            )}개
-          </div>
-
-        </div>
-
 
         <div class="summary-card">
 
@@ -1492,148 +2537,134 @@ async function load() {
         <div class="summary-card">
 
           <div class="summary-label">
-            History 종목
+            분석 섹터
+          </div>
+
+          <div class="summary-value">
+            ${number(
+              market.sectors
+            )}개
+          </div>
+
+        </div>
+
+
+        <div class="summary-card">
+
+          <div class="summary-label">
+            종목 분석
+          </div>
+
+          <div class="summary-value">
+            ${number(
+              rankingData.stats?.analyzed
+            )}개
+          </div>
+
+        </div>
+
+
+        <div class="summary-card">
+
+          <div class="summary-label">
+            완전 정배열
           </div>
 
           <div class="summary-value">
             ${number(
               rankingData
-                ?.historyDiagnostic
-                ?.historyFileStocks
-            ).toLocaleString()}
+                .alignmentStats
+                ?.PERFECT
+            )}개
           </div>
 
         </div>
 
       </div>
+
+
+      ${sectorSectionHTML(
+        "sector-current",
+        "🔥 현재 주도 섹터",
+        "현재 시장의 중심",
+        currentLeaders
+      )}
+
+
+      ${sectorSectionHTML(
+        "sector-early",
+        "🌱 차기 주도 후보",
+        "초기 확산 신호",
+        nextLeaderRadar
+      )}
+
+
+      ${sectorSectionHTML(
+        "sector-exhaustion",
+        "⚠️ 공세 종료 위험 섹터",
+        "과열·확산 둔화",
+        sectorExhaustion,
+        "exhaustion"
+      )}
+
+
+      ${stockSectionHTML(
+        "entry",
+        "🚀 ENTRY",
+        "지금 진입 위치가 좋은 공세 시작 후보",
+        entryRanking,
+        "entry"
+      )}
+
+
+      ${stockSectionHTML(
+        "leader",
+        "👑 LEADER",
+        "현재 시장을 실제로 이끄는 종목",
+        leaderRanking,
+        "leader"
+      )}
+
+
+      ${stockSectionHTML(
+        "early",
+        "🌱 EARLY",
+        "차기 주도주 전환 후보",
+        earlyRanking,
+        "early"
+      )}
+
+
+      ${stockSectionHTML(
+        "exhaustion",
+        "⚠️ EXHAUSTION",
+        "상승 에너지 소진 위험 종목",
+        exhaustionRanking,
+        "exhaustion"
+      )}
+
     `;
 
 
-    /* =====================================================
-       CURRENT SECTOR
-    ===================================================== */
+    requestAnimationFrame(
+      () => {
 
-    if (sectorData) {
-      const current =
-        Array.isArray(
-          sectorData.currentLeaders
-        )
-          ? sectorData.currentLeaders
-          : [];
-
-      html +=
-        sectorSectionHTML(
-          "sector-current",
-          "🔥 현재 주도 섹터",
-          "HAN · 시장을 실제로 이끄는 섹터",
-          current
-        );
-    } else {
-      html += `
-        <section id="sector-current">
-
-          <div class="section-head">
-            <div class="section-title">
-              🔥 현재 주도 섹터
-            </div>
-          </div>
-
-          <div class="sub-error">
-            sector-scan을 불러오지 못했습니다.
-          </div>
-
-        </section>
-      `;
-    }
-
-
-    /* =====================================================
-       STOCK RANKINGS
-    ===================================================== */
-
-    if (rankingData) {
-      html +=
-        rankingSectionHTML(
-          "entry-ranking",
-          "🚀 ENTRY",
-          "지금 진입 위치가 좋은 공세 시작 후보",
-          rankingData.entryRanking,
-          "entry"
+        requestAnimationFrame(
+          drawAllCharts
         );
 
-      html +=
-        rankingSectionHTML(
-          "leader-ranking",
-          "👑 LEADER",
-          "현재 시장을 실제로 이끄는 강한 종목",
-          rankingData.leaderRanking,
-          "leader"
-        );
+      }
+    );
 
-      html +=
-        rankingSectionHTML(
-          "early-ranking",
-          "🌱 EARLY",
-          "차기 주도주로 전환될 가능성이 높은 후보",
-          rankingData.earlyRanking,
-          "early"
-        );
-
-      html +=
-        rankingSectionHTML(
-          "exhaustion-ranking",
-          "⚠️ EXHAUSTION",
-          "상승 에너지 소진 위험이 높은 종목",
-          rankingData.exhaustionRanking,
-          "exhaustion"
-        );
-
-    } else {
-      html += `
-        <section id="entry-ranking">
-
-          <div class="section-head">
-            <div class="section-title">
-              🚀 종목 랭킹
-            </div>
-          </div>
-
-          <div class="sub-error">
-            rankings API를 불러오지 못했습니다.
-          </div>
-
-        </section>
-      `;
-    }
-
-
-    /* =====================================================
-       NEXT SECTOR
-    ===================================================== */
-
-    if (sectorData) {
-      const radar =
-        Array.isArray(
-          sectorData.nextLeaderRadar
-        )
-          ? sectorData.nextLeaderRadar
-          : [];
-
-      html +=
-        sectorSectionHTML(
-          "sector-radar",
-          "📡 차기 주도 섹터",
-          "EARLY · 다음 순환 후보",
-          radar
-        );
-    }
-
-
-    app.innerHTML =
-      html;
 
   } catch (error) {
+
+    console.error(
+      error
+    );
+
     app.innerHTML = `
+
       <div class="error">
 
         <strong>
@@ -1649,14 +2680,42 @@ async function load() {
 
         <br><br>
 
-        /api/sector-scan 및
+        /api/sector-scan 과
         /api/rankings 상태를 확인해주세요.
 
       </div>
+
     `;
   }
 }
 
+
+/* =========================================================
+   RESIZE
+========================================================= */
+
+let resizeTimer;
+
+window.addEventListener(
+  "resize",
+  () => {
+
+    clearTimeout(
+      resizeTimer
+    );
+
+    resizeTimer =
+      setTimeout(
+        drawAllCharts,
+        150
+      );
+  }
+);
+
+
+/* =========================================================
+   START
+========================================================= */
 
 load();
 
