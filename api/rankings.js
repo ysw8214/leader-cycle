@@ -1,2370 +1,908 @@
+/* =========================================================
+   LEADER CYCLE - RANKINGS V10
+   MARKET HISTORY FILE ARCHITECTURE
+========================================================= */
+
+const fs = require("fs");
+const path = require("path");
+
 module.exports = async function handler(req, res) {
   const startedAt = Date.now();
 
   try {
-    /* =========================================================
-       LEADER CYCLE - RANKINGS V8
-
-       V7 SCORE LOGIC PRESERVED
-
-       변경점
-       ---------------------------------------------------------
-       1. MARKET-SCAN 후보 발굴
-       2. KRX BULK HISTORY 유지
-       3. 종목별 API 반복 호출 없음
-       4. V7의 limit * 2 완료 조건 제거
-       5. scan 상위 순서 기준 실제 필요한 limit개가
-          분석 가능한 상태가 되면 history 수집 조기 종료
-       6. 신규상장/history 부족 종목은 자동 건너뛰고
-          다음 후보까지 history 확보
-       7. LEADER / EARLY / EXHAUSTION / ENTRY 점수식은
-          V7 그대로 유지
-    ========================================================= */
-
-    const apiKey = process.env.KRX_API_KEY;
-
-    if (!apiKey) {
-      return res.status(500).json({
-        ok: false,
-        error: "KRX_API_KEY 환경변수가 없습니다."
-      });
-    }
-
-    const protocol =
-      req.headers["x-forwarded-proto"] || "https";
-
-    const host = req.headers.host;
-
-    if (!host) {
-      return res.status(500).json({
-        ok: false,
-        error: "host 정보를 확인할 수 없습니다."
-      });
-    }
-
-    const baseUrl = `${protocol}://${host}`;
-
     res.setHeader(
       "Cache-Control",
-      "public, s-maxage=1800, stale-while-revalidate=3600"
+      "public, s-maxage=300, stale-while-revalidate=1800"
     );
 
-    /* =========================================================
+    /* =====================================================
        HELPERS
-    ========================================================= */
+    ===================================================== */
 
-    function num(value) {
-      if (
-        value === null ||
-        value === undefined ||
-        value === ""
-      ) {
-        return 0;
-      }
-
+    const num = value => {
       const n = Number(
-        String(value)
-          .replace(/,/g, "")
-          .trim()
+        String(value ?? 0).replace(/,/g, "")
       );
 
       return Number.isFinite(n) ? n : 0;
-    }
+    };
 
-    function clamp(value, min, max) {
-      return Math.max(
-        min,
-        Math.min(max, value)
+    const clamp = (value, min, max) =>
+      Math.max(min, Math.min(max, value));
+
+    const round = (value, digits = 2) => {
+      const p = Math.pow(10, digits);
+
+      return Math.round(num(value) * p) / p;
+    };
+
+    const average = values => {
+      const valid = values.filter(value =>
+        Number.isFinite(Number(value))
       );
-    }
-
-    function pct(current, previous) {
-      current = num(current);
-      previous = num(previous);
-
-      if (!previous) {
-        return 0;
-      }
-
-      return (
-        ((current - previous) / previous) *
-        100
-      );
-    }
-
-    function average(values) {
-      if (!Array.isArray(values)) {
-        return 0;
-      }
-
-      const valid = values
-        .map(num)
-        .filter(Number.isFinite);
 
       if (!valid.length) {
         return 0;
       }
 
       return (
-        valid.reduce((a, b) => a + b, 0) /
-        valid.length
+        valid.reduce(
+          (sum, value) => sum + Number(value),
+          0
+        ) / valid.length
       );
-    }
+    };
 
-    function normalizeCode(value) {
-      const raw =
-        String(value || "").trim();
+    /* =====================================================
+       BASE URL
+    ===================================================== */
 
-      if (/^\d{6}$/.test(raw)) {
-        return raw;
-      }
+    const protocol =
+      req.headers["x-forwarded-proto"] || "https";
 
-      const match =
-        raw.match(/(\d{6})/);
+    const host = req.headers.host;
 
-      return match
-        ? match[1]
-        : raw;
-    }
+    const baseUrl = `${protocol}://${host}`;
 
-    function makeDate(date) {
-      const y =
-        date.getFullYear();
+    /* =====================================================
+       FETCH JSON
+    ===================================================== */
 
-      const m =
-        String(
-          date.getMonth() + 1
-        ).padStart(2, "0");
+    async function fetchJSON(url, timeoutMs = 15000) {
+      const controller = new AbortController();
 
-      const d =
-        String(
-          date.getDate()
-        ).padStart(2, "0");
-
-      return `${y}${m}${d}`;
-    }
-
-    async function fetchJson(
-      url,
-      timeoutMs = 10000,
-      options = {}
-    ) {
-      const controller =
-        new AbortController();
-
-      const timer =
-        setTimeout(
-          () => controller.abort(),
-          timeoutMs
-        );
+      const timer = setTimeout(
+        () => controller.abort(),
+        timeoutMs
+      );
 
       try {
-        const response =
-          await fetch(url, {
-            ...options,
-            signal: controller.signal
-          });
+        const response = await fetch(url, {
+          signal: controller.signal,
+          headers: {
+            Accept: "application/json"
+          }
+        });
 
-        let json = null;
+        const text = await response.text();
 
-        try {
-          json =
-            await response.json();
-        } catch {
-          json = null;
+        if (!response.ok) {
+          throw new Error(
+            `HTTP ${response.status}: ${text.slice(0, 200)}`
+          );
         }
 
-        return {
-          ok: response.ok,
-          status: response.status,
-          json
-        };
-
+        return JSON.parse(text);
       } finally {
         clearTimeout(timer);
       }
     }
 
-    /* =========================================================
-       OPTIONS
-    ========================================================= */
+    /* =====================================================
+       MARKET SNAPSHOT
+    ===================================================== */
 
-    const requestedLimit =
-      parseInt(
-        req.query.limit || "10",
-        10
+    const snapshot = await fetchJSON(
+      `${baseUrl}/api/market-snapshot`
+    );
+
+    if (!snapshot || snapshot.ok === false) {
+      throw new Error(
+        snapshot?.error ||
+          "market-snapshot 호출 실패"
       );
-
-    const limit =
-      clamp(
-        Number.isFinite(requestedLimit)
-          ? requestedLimit
-          : 10,
-        4,
-        20
-      );
-
-    const scanLimit =
-      clamp(
-        limit * 3,
-        limit,
-        50
-      );
-
-    const requestedDate =
-      String(
-        req.query.date || ""
-      ).trim();
-
-    /* =========================================================
-       1. MARKET SCAN
-    ========================================================= */
-
-    let scanUrl =
-      `${baseUrl}/api/market-scan?limit=${scanLimit}`;
-
-    if (/^\d{8}$/.test(requestedDate)) {
-      scanUrl +=
-        `&date=${encodeURIComponent(
-          requestedDate
-        )}`;
     }
 
-    let scanResult;
+    const marketStocks = Array.isArray(snapshot.stocks)
+      ? snapshot.stocks
+      : [];
 
-    try {
-      scanResult =
-        await fetchJson(
-          scanUrl,
-          10000
-        );
-
-    } catch (error) {
-      return res.status(504).json({
-        ok: false,
-        version:
-          "LEADER_CYCLE_RANKINGS_V8",
-        error:
-          "market-scan timeout",
-        detail:
-          String(
-            error?.message ||
-            error
-          )
-      });
-    }
-
-    const scan =
-      scanResult.json;
-
-    if (
-      !scanResult.ok ||
-      !scan ||
-      !scan.ok ||
-      !Array.isArray(scan.candidates)
-    ) {
-      return res.status(500).json({
-        ok: false,
-        version:
-          "LEADER_CYCLE_RANKINGS_V8",
-        error:
-          "market-scan 호출 실패",
-        detail: scan
-      });
-    }
-
-    const candidates =
-      scan.candidates.slice(
-        0,
-        scanLimit
+    if (!marketStocks.length) {
+      throw new Error(
+        "market-snapshot 종목이 없습니다."
       );
-
-    if (!candidates.length) {
-      return res.status(200).json({
-        ok: true,
-
-        version:
-          "LEADER_CYCLE_RANKINGS_V8",
-
-        date:
-          scan.date || null,
-
-        stats: {
-          target: limit,
-          candidates: 0,
-          analyzed: 0,
-          skipped: 0,
-          buyable: 0
-        },
-
-        topPicks: {
-          entry: null,
-          leader: null,
-          early: null,
-          exhaustion: null
-        },
-
-        entryRanking: [],
-        leaderRanking: [],
-        earlyRanking: [],
-        exhaustionRanking: [],
-        failed: [],
-        skipped: []
-      });
     }
 
-    const candidateCodes =
-      new Set(
-        candidates.map(
-          candidate =>
-            String(candidate.code)
+    /* =====================================================
+       LOAD MARKET HISTORY FILE
+    ===================================================== */
+
+    const historyPath = path.join(
+      process.cwd(),
+      "data",
+      "market-history.json"
+    );
+
+    if (!fs.existsSync(historyPath)) {
+      throw new Error(
+        "data/market-history.json 파일이 없습니다."
+      );
+    }
+
+    const rawHistory = fs.readFileSync(
+      historyPath,
+      "utf8"
+    );
+
+    const historyJSON = JSON.parse(rawHistory);
+
+    /* =====================================================
+       HISTORY NORMALIZER
+    ===================================================== */
+
+    const historyMap = new Map();
+
+    function pushHistory(code, row) {
+      const cleanCode = String(code || "").match(
+        /(\d{6})/
+      )?.[1];
+
+      if (!cleanCode) {
+        return;
+      }
+
+      const normalized = {
+        date: String(
+          row.date ??
+            row.BAS_DD ??
+            row.basDd ??
+            ""
         )
-      );
+          .replace(/-/g, "")
+          .trim(),
 
-    /* =========================================================
-       BASE DATE
-    ========================================================= */
+        open: num(
+          row.open ??
+            row.TDD_OPNPRC ??
+            row.OPNPRC
+        ),
 
-    const scanDate =
-      String(
-        scan.date ||
-        requestedDate ||
-        ""
-      );
+        high: num(
+          row.high ??
+            row.TDD_HGPRC ??
+            row.HGPRC
+        ),
 
-    let baseDate;
+        low: num(
+          row.low ??
+            row.TDD_LWPRC ??
+            row.LWPRC
+        ),
 
-    if (/^\d{8}$/.test(scanDate)) {
-      baseDate =
-        new Date(
-          Number(
-            scanDate.slice(0, 4)
-          ),
-          Number(
-            scanDate.slice(4, 6)
-          ) - 1,
-          Number(
-            scanDate.slice(6, 8)
-          )
-        );
-    } else {
-      const now =
-        new Date();
+        close: num(
+          row.close ??
+            row.TDD_CLSPRC ??
+            row.CLSPRC
+        ),
 
-      baseDate =
-        new Date(
-          now.toLocaleString(
-            "en-US",
-            {
-              timeZone:
-                "Asia/Seoul"
-            }
-          )
-        );
-    }
+        volume: num(
+          row.volume ??
+            row.ACC_TRDVOL ??
+            row.TRDVOL
+        ),
 
-    /* =========================================================
-       DATE CANDIDATES
-    ========================================================= */
+        tradingValue: num(
+          row.tradingValue ??
+            row.ACC_TRDVAL ??
+            row.TRDVAL
+        ),
 
-    const candidateDates = [];
-
-    for (
-      let i = 0;
-      i < 165;
-      i++
-    ) {
-      const target =
-        new Date(baseDate);
-
-      target.setDate(
-        baseDate.getDate() - i
-      );
-
-      const day =
-        target.getDay();
+        changeRate: num(
+          row.changeRate ??
+            row.FLUC_RT ??
+            row.CHG_RT
+        )
+      };
 
       if (
-        day === 0 ||
-        day === 6
+        !normalized.date ||
+        normalized.close <= 0
       ) {
+        return;
+      }
+
+      if (!historyMap.has(cleanCode)) {
+        historyMap.set(cleanCode, []);
+      }
+
+      historyMap
+        .get(cleanCode)
+        .push(normalized);
+    }
+
+    /* =====================================================
+       HISTORY FORMAT 1
+
+       {
+         stocks: {
+           "005930": [...]
+         }
+       }
+    ===================================================== */
+
+    if (
+      historyJSON?.stocks &&
+      !Array.isArray(historyJSON.stocks) &&
+      typeof historyJSON.stocks === "object"
+    ) {
+      for (const [code, rows] of Object.entries(
+        historyJSON.stocks
+      )) {
+        if (Array.isArray(rows)) {
+          for (const row of rows) {
+            pushHistory(code, row);
+          }
+        }
+      }
+    }
+
+    /* =====================================================
+       HISTORY FORMAT 2
+
+       {
+         history: {
+           "005930": [...]
+         }
+       }
+    ===================================================== */
+
+    if (
+      historyJSON?.history &&
+      !Array.isArray(historyJSON.history) &&
+      typeof historyJSON.history === "object"
+    ) {
+      for (const [code, rows] of Object.entries(
+        historyJSON.history
+      )) {
+        if (Array.isArray(rows)) {
+          for (const row of rows) {
+            pushHistory(code, row);
+          }
+        }
+      }
+    }
+
+    /* =====================================================
+       HISTORY FORMAT 3
+
+       {
+         "005930": [...]
+       }
+    ===================================================== */
+
+    if (
+      historyMap.size === 0 &&
+      historyJSON &&
+      !Array.isArray(historyJSON) &&
+      typeof historyJSON === "object"
+    ) {
+      for (const [code, rows] of Object.entries(
+        historyJSON
+      )) {
+        if (
+          /^\d{6}$/.test(code) &&
+          Array.isArray(rows)
+        ) {
+          for (const row of rows) {
+            pushHistory(code, row);
+          }
+        }
+      }
+    }
+
+    /* =====================================================
+       HISTORY FORMAT 4
+       FLAT ARRAY
+    ===================================================== */
+
+    const possibleArrays = [
+      historyJSON,
+      historyJSON?.stocks,
+      historyJSON?.data,
+      historyJSON?.rows,
+      historyJSON?.history
+    ];
+
+    for (const arr of possibleArrays) {
+      if (!Array.isArray(arr)) {
         continue;
       }
 
-      candidateDates.push(
-        makeDate(target)
-      );
-    }
+      for (const row of arr) {
+        const code =
+          row?.code ??
+          row?.ISU_SRT_CD ??
+          row?.SRT_CD ??
+          row?.ISU_CD;
 
-    /* =========================================================
-       KRX ENDPOINTS
-    ========================================================= */
-
-    const KOSPI_URL =
-      "https://data-dbg.krx.co.kr/svc/apis/sto/stk_bydd_trd";
-
-    const KOSDAQ_URL =
-      "https://data-dbg.krx.co.kr/svc/apis/sto/ksq_bydd_trd";
-
-    async function fetchMarket(
-      date,
-      market
-    ) {
-      const endpoint =
-        market === "KOSDAQ"
-          ? KOSDAQ_URL
-          : KOSPI_URL;
-
-      const url =
-        `${endpoint}?basDd=${date}`;
-
-      try {
-        const result =
-          await fetchJson(
-            url,
-            7000,
-            {
-              headers: {
-                AUTH_KEY:
-                  apiKey
-              }
-            }
-          );
-
-        const rows =
-          Array.isArray(
-            result.json?.OutBlock_1
-          )
-            ? result.json.OutBlock_1
-            : [];
-
-        return {
-          ok: result.ok,
-          market,
-          date,
-          rows
-        };
-
-      } catch {
-        return {
-          ok: false,
-          market,
-          date,
-          rows: []
-        };
+        pushHistory(code, row);
       }
     }
 
-    /* =========================================================
-       HISTORY MAP
-    ========================================================= */
+    /* =====================================================
+       SORT + DEDUP HISTORY
+    ===================================================== */
 
-    const histories =
-      new Map();
+    for (const [code, rows] of historyMap.entries()) {
+      const byDate = new Map();
 
-    candidates.forEach(
-      candidate => {
-        histories.set(
-          String(candidate.code),
-          []
+      for (const row of rows) {
+        byDate.set(row.date, row);
+      }
+
+      const sorted = [...byDate.values()].sort(
+        (a, b) =>
+          a.date.localeCompare(b.date)
+      );
+
+      historyMap.set(code, sorted);
+    }
+
+    /* =====================================================
+       INVESTABLE STOCKS
+    ===================================================== */
+
+    const investableStocks = marketStocks.filter(
+      stock => {
+        const close = num(stock.close);
+
+        const tradingValue = num(
+          stock.tradingValue
+        );
+
+        const marketCap = num(
+          stock.marketCap
+        );
+
+        return (
+          /^\d{6}$/.test(
+            String(stock.code)
+          ) &&
+          close >= 1000 &&
+          tradingValue >= 500000000 &&
+          marketCap >= 30000000000
         );
       }
     );
 
-    function convertRow(
-      row,
-      market
-    ) {
-      const code =
-        normalizeCode(
-          row.ISU_CD
+    /* =====================================================
+       DISCOVERY SCORE
+    ===================================================== */
+
+    const discoveryCandidates = investableStocks
+      .map(stock => {
+        const changeRate = num(
+          stock.changeRate
         );
 
-      return {
-        date:
-          String(
-            row.BAS_DD || ""
-          ),
-
-        code,
-
-        name:
-          String(
-            row.ISU_NM || ""
-          ).trim(),
-
-        market,
-
-        open:
-          num(row.TDD_OPNPRC),
-
-        high:
-          num(row.TDD_HGPRC),
-
-        low:
-          num(row.TDD_LWPRC),
-
-        close:
-          num(row.TDD_CLSPRC),
-
-        changeRate:
-          num(row.FLUC_RT),
-
-        volume:
-          num(row.ACC_TRDVOL),
-
-        tradingValue:
-          num(row.ACC_TRDVAL),
-
-        marketCap:
-          num(row.MKTCAP)
-      };
-    }
-
-    /* =========================================================
-       2. BULK HISTORY V8
-    ========================================================= */
-
-    const REQUIRED_DAYS = 100;
-
-    const MIN_ANALYSIS_DAYS = 60;
-
-    const DATE_BATCH_SIZE = 12;
-
-    let krxRequests = 0;
-
-    let historyBatches = 0;
-
-    let earlyStop = false;
-
-    let earlyStopReason = null;
-
-    function countHistoryState() {
-      let full = 0;
-      let usable = 0;
-
-      for (
-        const candidate of candidates
-      ) {
-        const history =
-          histories.get(
-            String(candidate.code)
-          ) || [];
-
-        if (
-          history.length >=
-          MIN_ANALYSIS_DAYS
-        ) {
-          usable++;
-        }
-
-        if (
-          history.length >=
-          REQUIRED_DAYS
-        ) {
-          full++;
-        }
-      }
-
-      return {
-        full,
-        usable
-      };
-    }
-
-    function targetCandidatesComplete() {
-      let found = 0;
-
-      for (
-        const candidate of candidates
-      ) {
-        const history =
-          histories.get(
-            String(candidate.code)
-          ) || [];
-
-        if (
-          history.length >=
-          REQUIRED_DAYS
-        ) {
-          found++;
-
-          if (found >= limit) {
-            return true;
-          }
-        }
-      }
-
-      return false;
-    }
-
-    for (
-      let i = 0;
-      i < candidateDates.length;
-      i += DATE_BATCH_SIZE
-    ) {
-      if (
-        targetCandidatesComplete()
-      ) {
-        earlyStop = true;
-
-        earlyStopReason =
-          "TARGET_FULL_HISTORY_READY";
-
-        break;
-      }
-
-      const batch =
-        candidateDates.slice(
-          i,
-          i + DATE_BATCH_SIZE
+        const tradingValue = num(
+          stock.tradingValue
         );
 
-      const jobs = [];
-
-      for (const date of batch) {
-        jobs.push(
-          fetchMarket(
-            date,
-            "KOSPI"
-          )
+        const marketCap = num(
+          stock.marketCap
         );
 
-        jobs.push(
-          fetchMarket(
-            date,
-            "KOSDAQ"
-          )
+        const liquidityScore = clamp(
+          Math.log10(
+            Math.max(tradingValue, 1)
+          ) * 8,
+          0,
+          100
         );
-      }
 
-      krxRequests +=
-        jobs.length;
+        const momentumScore = clamp(
+          50 + changeRate * 5,
+          0,
+          100
+        );
 
-      historyBatches++;
+        const sizeScore = clamp(
+          Math.log10(
+            Math.max(marketCap, 1)
+          ) * 5,
+          0,
+          100
+        );
 
-      const results =
-        await Promise.all(jobs);
+        const discoveryScore =
+          liquidityScore * 0.5 +
+          momentumScore * 0.35 +
+          sizeScore * 0.15;
 
-      for (
-        const result of results
-      ) {
-        if (
-          !result ||
-          !result.ok ||
-          !Array.isArray(result.rows)
-        ) {
-          continue;
-        }
-
-        for (
-          const row of result.rows
-        ) {
-          const code =
-            normalizeCode(
-              row.ISU_CD
-            );
-
-          if (
-            !candidateCodes.has(code)
-          ) {
-            continue;
-          }
-
-          const history =
-            histories.get(code);
-
-          if (!history) {
-            continue;
-          }
-
-          if (
-            history.length >=
-            REQUIRED_DAYS
-          ) {
-            continue;
-          }
-
-          const converted =
-            convertRow(
-              row,
-              result.market
-            );
-
-          if (
-            !converted.date ||
-            converted.close <= 0
-          ) {
-            continue;
-          }
-
-          if (
-            history.some(
-              item =>
-                item.date ===
-                converted.date
-            )
-          ) {
-            continue;
-          }
-
-          history.push(converted);
-        }
-      }
-
-      if (
-        targetCandidatesComplete()
-      ) {
-        earlyStop = true;
-
-        earlyStopReason =
-          "TARGET_FULL_HISTORY_READY";
-
-        break;
-      }
-    }
-
-    const historyState =
-      countHistoryState();
-
-    /* =========================================================
-       3. STOCK ANALYSIS
-       V7 SCORE ENGINE
-    ========================================================= */
-
-    function analyzeStock(
-      candidate,
-      rawHistory
-    ) {
-      const code =
-        String(candidate.code);
-
-      if (
-        !Array.isArray(rawHistory) ||
-        rawHistory.length <
-          MIN_ANALYSIS_DAYS
-      ) {
         return {
-          ok: false,
-          code,
-          name:
-            candidate.name,
-          error:
-            `history 부족 (${rawHistory?.length || 0}일)`
+          ...stock,
+          discoveryScore: round(
+            discoveryScore
+          )
         };
-      }
-
-      const newestFirst =
-        [...rawHistory]
-          .sort(
-            (a, b) =>
-              b.date.localeCompare(
-                a.date
-              )
-          )
-          .slice(
-            0,
-            REQUIRED_DAYS
-          );
-
-      function movingAverage(
-        index,
-        period
-      ) {
-        const slice =
-          newestFirst.slice(
-            index,
-            index + period
-          );
-
-        if (
-          slice.length < period
-        ) {
-          return null;
-        }
-
-        return average(
-          slice.map(
-            row => row.close
-          )
-        );
-      }
-
-      const chart =
-        newestFirst.map(
-          (row, index) => ({
-            ...row,
-
-            ma5:
-              movingAverage(
-                index,
-                5
-              ),
-
-            ma20:
-              movingAverage(
-                index,
-                20
-              ),
-
-            ma60:
-              movingAverage(
-                index,
-                60
-              )
-          })
-        );
-
-      const rows =
-        [...chart].reverse();
-
-      const latest =
-        rows[
-          rows.length - 1
-        ];
-
-      function getBack(days) {
-        const index =
-          rows.length -
-          1 -
-          days;
-
-        return index >= 0
-          ? rows[index]
-          : null;
-      }
-
-      const close =
-        num(latest.close);
-
-      const ma5 =
-        num(latest.ma5);
-
-      const ma20 =
-        num(latest.ma20);
-
-      const ma60 =
-        num(latest.ma60);
-
-      if (
-        close <= 0 ||
-        ma20 <= 0 ||
-        ma60 <= 0
-      ) {
-        return {
-          ok: false,
-          code,
-          name:
-            candidate.name,
-          error:
-            "이동평균 데이터 부족"
-        };
-      }
-
-      const row5 =
-        getBack(5);
-
-      const row10 =
-        getBack(10);
-
-      const row20 =
-        getBack(20);
-
-      const row60 =
-        getBack(60);
-
-      const return5 =
-        row5
-          ? pct(
-              close,
-              row5.close
-            )
-          : 0;
-
-      const return10 =
-        row10
-          ? pct(
-              close,
-              row10.close
-            )
-          : 0;
-
-      const return20 =
-        row20
-          ? pct(
-              close,
-              row20.close
-            )
-          : 0;
-
-      const return60 =
-        row60
-          ? pct(
-              close,
-              row60.close
-            )
-          : 0;
-
-      /* =====================================================
-         MOVING AVERAGE STATE
-      ===================================================== */
-
-      const ma20FiveDaysAgo =
-        row5
-          ? num(row5.ma20)
-          : 0;
-
-      const ma60FiveDaysAgo =
-        row5
-          ? num(row5.ma60)
-          : 0;
-
-      const ma20Rising =
-        ma20FiveDaysAgo > 0 &&
-        ma20 >
-          ma20FiveDaysAgo;
-
-      const ma60Rising =
-        ma60FiveDaysAgo > 0 &&
-        ma60 >
-          ma60FiveDaysAgo;
-
-      const alignment =
-        close > ma5 &&
-        ma5 > ma20 &&
-        ma20 > ma60;
-
-      const ma20To60Gap =
-        pct(
-          ma20,
-          ma60
-        );
-
-      const distance20 =
-        pct(
-          close,
-          ma20
-        );
-
-      const distance60 =
-        pct(
-          close,
-          ma60
-        );
-
-      let alignment5DaysAgo =
-        false;
-
-      if (row5) {
-        const oldClose =
-          num(row5.close);
-
-        const oldMa5 =
-          num(row5.ma5);
-
-        const oldMa20 =
-          num(row5.ma20);
-
-        const oldMa60 =
-          num(row5.ma60);
-
-        alignment5DaysAgo =
-          oldClose > oldMa5 &&
-          oldMa5 > oldMa20 &&
-          oldMa20 > oldMa60;
-      }
-
-      const freshAlignment =
-        alignment &&
-        !alignment5DaysAgo;
-
-      const oldMa20 =
-        row5
-          ? num(row5.ma20)
-          : 0;
-
-      const oldMa60 =
-        row5
-          ? num(row5.ma60)
-          : 0;
-
-      const freshGoldenCross =
-        ma20 >= ma60 &&
-        oldMa20 > 0 &&
-        oldMa60 > 0 &&
-        oldMa20 <= oldMa60;
-
-      /* =====================================================
-         ACTIVITY
-      ===================================================== */
-
-      const recent5 =
-        rows.slice(-5);
-
-      const previous20 =
-        rows.slice(
-          -25,
-          -5
-        );
-
-      const avgVolume5 =
-        average(
-          recent5.map(
-            row => row.volume
-          )
-        );
-
-      const avgVolume20 =
-        average(
-          previous20.map(
-            row => row.volume
-          )
-        );
-
-      const volumeRatio =
-        avgVolume20 > 0
-          ? avgVolume5 /
-            avgVolume20
-          : 1;
-
-      const avgValue5 =
-        average(
-          recent5.map(
-            row =>
-              row.tradingValue
-          )
-        );
-
-      const avgValue20 =
-        average(
-          previous20.map(
-            row =>
-              row.tradingValue
-          )
-        );
-
-      const valueRatio =
-        avgValue20 > 0
-          ? avgValue5 /
-            avgValue20
-          : 1;
-
-      /* =====================================================
-         BREAKOUT
-      ===================================================== */
-
-      const previous20Rows =
-        rows.slice(
-          -21,
-          -1
-        );
-
-      const high20 =
-        previous20Rows.length
-          ? Math.max(
-              ...previous20Rows.map(
-                row =>
-                  num(
-                    row.high ||
-                    row.close
-                  )
-              )
-            )
-          : close;
-
-      const breakout20 =
-        high20 > 0 &&
-        close > high20;
-
-      const distanceFromHigh20 =
-        high20 > 0
-          ? pct(
-              close,
-              high20
-            )
-          : 0;
-
-      const nearBreakout =
-        distanceFromHigh20 >= -5 &&
-        distanceFromHigh20 <= 0;
-
-      /* =====================================================
-         LEADER
-      ===================================================== */
-
-      let leaderTrend = 0;
-      let leaderAlignment = 0;
-      let leaderMomentum = 0;
-      let leaderActivity = 0;
-      let leaderPersistence = 0;
-
-      const leaderReasons = [];
-      const leaderWarnings = [];
-
-      if (close > ma20) {
-        leaderTrend += 6;
-
-        leaderReasons.push(
-          "현재가 MA20 위"
-        );
-      }
-
-      if (close > ma60) {
-        leaderTrend += 6;
-
-        leaderReasons.push(
-          "현재가 MA60 위"
-        );
-      }
-
-      if (ma5 > ma20) {
-        leaderTrend += 6;
-      }
-
-      if (ma20Rising) {
-        leaderTrend += 6;
-
-        leaderReasons.push(
-          "MA20 상승"
-        );
-      }
-
-      if (ma60Rising) {
-        leaderTrend += 6;
-
-        leaderReasons.push(
-          "MA60 상승"
-        );
-      }
-
-      if (alignment) {
-        leaderAlignment = 20;
-
-        leaderReasons.push(
-          "완전 정배열"
-        );
-      } else if (
-        close > ma60 &&
-        ma5 > ma20 &&
-        ma20Rising &&
-        ma20To60Gap >= -3
-      ) {
-        leaderAlignment = 13;
-
-        leaderReasons.push(
-          "정배열 전환 근접"
-        );
-      } else if (
-        close > ma20 &&
-        ma5 > ma20
-      ) {
-        leaderAlignment = 7;
-      }
-
-      if (return20 >= 15) {
-        leaderMomentum += 8;
-      } else if (
-        return20 >= 8
-      ) {
-        leaderMomentum += 6;
-      } else if (
-        return20 >= 3
-      ) {
-        leaderMomentum += 4;
-      } else if (
-        return20 > 0
-      ) {
-        leaderMomentum += 2;
-      }
-
-      if (return60 >= 25) {
-        leaderMomentum += 8;
-      } else if (
-        return60 >= 15
-      ) {
-        leaderMomentum += 6;
-      } else if (
-        return60 >= 5
-      ) {
-        leaderMomentum += 4;
-      } else if (
-        return60 > 0
-      ) {
-        leaderMomentum += 2;
-      }
-
-      if (breakout20) {
-        leaderMomentum += 4;
-
-        leaderReasons.push(
-          "20일 고점 돌파"
-        );
-      }
-
-      if (
-        avgValue5 >=
-        500000000000
-      ) {
-        leaderActivity += 10;
-      } else if (
-        avgValue5 >=
-        200000000000
-      ) {
-        leaderActivity += 8;
-      } else if (
-        avgValue5 >=
-        100000000000
-      ) {
-        leaderActivity += 6;
-      } else if (
-        avgValue5 >=
-        30000000000
-      ) {
-        leaderActivity += 4;
-      } else if (
-        avgValue5 >=
-        10000000000
-      ) {
-        leaderActivity += 2;
-      }
-
-      if (valueRatio >= 2) {
-        leaderActivity += 6;
-
-        leaderReasons.push(
-          "거래대금 강한 증가"
-        );
-      } else if (
-        valueRatio >= 1.4
-      ) {
-        leaderActivity += 5;
-      } else if (
-        valueRatio >= 1.1
-      ) {
-        leaderActivity += 3;
-      }
-
-      if (volumeRatio >= 1.5) {
-        leaderActivity += 4;
-      } else if (
-        volumeRatio >= 1.1
-      ) {
-        leaderActivity += 2;
-      }
-
-      leaderActivity =
-        clamp(
-          leaderActivity,
-          0,
-          20
-        );
-
-      if (return5 > 0) {
-        leaderPersistence += 2;
-      }
-
-      if (return10 > 0) {
-        leaderPersistence += 2;
-      }
-
-      if (return20 > 0) {
-        leaderPersistence += 3;
-      }
-
-      if (return60 > 0) {
-        leaderPersistence += 3;
-      }
-
-      let leaderScore =
-        leaderTrend +
-        leaderAlignment +
-        leaderMomentum +
-        leaderActivity +
-        leaderPersistence;
-
-      leaderScore =
-        clamp(
-          Math.round(
-            leaderScore
-          ),
-          0,
-          100
-        );
-
-      /* =====================================================
-         EARLY
-      ===================================================== */
-
-      let earlyTransition = 0;
-      let earlyMomentum = 0;
-      let earlyActivity = 0;
-      let earlyPosition = 0;
-      let earlyPenalty = 0;
-
-      const earlyReasons = [];
-      const earlyWarnings = [];
-
-      if (ma5 > ma20) {
-        earlyTransition += 6;
-      }
-
-      if (ma20Rising) {
-        earlyTransition += 7;
-
-        earlyReasons.push(
-          "MA20 상승"
-        );
-      }
-
-      if (
-        ma20To60Gap >= -3 &&
-        ma20To60Gap < 0
-      ) {
-        earlyTransition += 10;
-
-        earlyReasons.push(
-          "MA20/MA60 골든크로스 임박"
-        );
-      }
-
-      if (freshGoldenCross) {
-        earlyTransition += 12;
-
-        earlyReasons.push(
-          "MA20/MA60 신규 골든크로스"
-        );
-      } else if (
-        ma20 >= ma60 &&
-        ma20To60Gap <= 5
-      ) {
-        earlyTransition += 7;
-      }
-
-      if (freshAlignment) {
-        earlyTransition += 8;
-
-        earlyReasons.push(
-          "정배열 신규 형성"
-        );
-      }
-
-      earlyTransition =
-        clamp(
-          earlyTransition,
-          0,
-          30
-        );
-
-      if (
-        return5 > 0 &&
-        return5 <= 10
-      ) {
-        earlyMomentum += 6;
-      }
-
-      if (
-        return10 > 2 &&
-        return10 <= 18
-      ) {
-        earlyMomentum += 6;
-      }
-
-      if (
-        return20 > 3 &&
-        return20 <= 25
-      ) {
-        earlyMomentum += 8;
-      }
-
-      if (valueRatio >= 2) {
-        earlyActivity += 15;
-
-        earlyReasons.push(
-          "거래대금 강한 유입"
-        );
-      } else if (
-        valueRatio >= 1.5
-      ) {
-        earlyActivity += 12;
-      } else if (
-        valueRatio >= 1.2
-      ) {
-        earlyActivity += 8;
-      }
-
-      if (volumeRatio >= 1.8) {
-        earlyActivity += 10;
-      } else if (
-        volumeRatio >= 1.3
-      ) {
-        earlyActivity += 7;
-      } else if (
-        volumeRatio >= 1.1
-      ) {
-        earlyActivity += 4;
-      }
-
-      if (
-        distance20 >= 0 &&
-        distance20 <= 5
-      ) {
-        earlyPosition += 12;
-      } else if (
-        distance20 > 5 &&
-        distance20 <= 10
-      ) {
-        earlyPosition += 8;
-      } else if (
-        distance20 > 10 &&
-        distance20 <= 15
-      ) {
-        earlyPosition += 4;
-      }
-
-      if (
-        distance60 >= 0 &&
-        distance60 <= 10
-      ) {
-        earlyPosition += 8;
-      } else if (
-        distance60 > 10 &&
-        distance60 <= 18
-      ) {
-        earlyPosition += 4;
-      }
-
-      if (
-        nearBreakout ||
-        breakout20
-      ) {
-        earlyPosition += 5;
-
-        earlyReasons.push(
-          breakout20
-            ? "20일 고점 돌파"
-            : "20일 고점 돌파 대기"
-        );
-      }
-
-      if (return5 >= 20) {
-        earlyPenalty += 12;
-
-        earlyWarnings.push(
-          "단기 급등"
-        );
-      }
-
-      if (return20 >= 35) {
-        earlyPenalty += 12;
-
-        earlyWarnings.push(
-          "20일 상승폭 과대"
-        );
-      }
-
-      if (distance20 >= 18) {
-        earlyPenalty += 10;
-
-        earlyWarnings.push(
-          "MA20 과이격"
-        );
-      }
-
-      let earlyScore =
-        earlyTransition +
-        earlyMomentum +
-        earlyActivity +
-        earlyPosition -
-        earlyPenalty;
-
-      earlyScore =
-        clamp(
-          Math.round(
-            earlyScore
-          ),
-          0,
-          100
-        );
-
-      /* =====================================================
-         EXHAUSTION
-      ===================================================== */
-
-      let exhaustionMomentum = 0;
-      let exhaustionExtension = 0;
-      let exhaustionActivity = 0;
-      let exhaustionTrend = 0;
-
-      const exhaustionReasons = [];
-
-      if (
-        return20 >= 20 &&
-        return5 <= 1
-      ) {
-        exhaustionMomentum += 15;
-
-        exhaustionReasons.push(
-          "중기 급등 후 단기 모멘텀 둔화"
-        );
-      }
-
-      if (
-        return60 >= 35 &&
-        return10 < 0
-      ) {
-        exhaustionMomentum += 15;
-
-        exhaustionReasons.push(
-          "장기 강세 후 최근 약화"
-        );
-      }
-
-      if (distance20 >= 25) {
-        exhaustionExtension += 25;
-
-        exhaustionReasons.push(
-          "MA20 극단적 과이격"
-        );
-      } else if (
-        distance20 >= 18
-      ) {
-        exhaustionExtension += 18;
-
-        exhaustionReasons.push(
-          "MA20 높은 과이격"
-        );
-      } else if (
-        distance20 >= 12
-      ) {
-        exhaustionExtension += 10;
-      }
-
-      if (
-        volumeRatio >= 2 &&
-        return5 <= 1
-      ) {
-        exhaustionActivity += 12;
-
-        exhaustionReasons.push(
-          "대량 거래에도 가격 정체"
-        );
-      }
-
-      if (
-        valueRatio >= 2 &&
-        return5 < 0
-      ) {
-        exhaustionActivity += 13;
-
-        exhaustionReasons.push(
-          "거래대금 급증 중 가격 약세"
-        );
-      }
-
-      if (close < ma5) {
-        exhaustionTrend += 8;
-      }
-
-      if (close < ma20) {
-        exhaustionTrend += 17;
-
-        exhaustionReasons.push(
-          "MA20 이탈"
-        );
-      }
-
-      if (
-        ma5 < ma20 &&
-        return60 > 15
-      ) {
-        exhaustionTrend += 10;
-      }
-
-      let exhaustionScore =
-        exhaustionMomentum +
-        exhaustionExtension +
-        exhaustionActivity +
-        exhaustionTrend;
-
-      exhaustionScore =
-        clamp(
-          Math.round(
-            exhaustionScore
-          ),
-          0,
-          100
-        );
-
-      /* =====================================================
-         ENTRY
-      ===================================================== */
-
-      let entryTrend = 0;
-      let entrySetup = 0;
-      let entryBreakout = 0;
-      let entryActivity = 0;
-      let entryPenalty = 0;
-
-      const entryReasons = [];
-      const entryWarnings = [];
-
-      /* A. TREND 25 */
-
-      if (close > ma20) {
-        entryTrend += 5;
-      }
-
-      if (close > ma60) {
-        entryTrend += 5;
-      }
-
-      if (ma5 > ma20) {
-        entryTrend += 5;
-      }
-
-      if (ma20Rising) {
-        entryTrend += 5;
-      }
-
-      if (ma60Rising) {
-        entryTrend += 5;
-      }
-
-      if (entryTrend >= 20) {
-        entryReasons.push(
-          "상승 추세 기반 양호"
-        );
-      }
-
-      /* B. SETUP 30 */
-
-      if (freshGoldenCross) {
-        entrySetup += 12;
-
-        entryReasons.push(
-          "MA20/MA60 신규 골든크로스"
-        );
-      } else if (
-        ma20To60Gap >= -2 &&
-        ma20To60Gap < 0
-      ) {
-        entrySetup += 9;
-
-        entryReasons.push(
-          "MA20/MA60 골든크로스 임박"
-        );
-      } else if (
-        ma20 >= ma60 &&
-        ma20To60Gap <= 4
-      ) {
-        entrySetup += 6;
-
-        entryReasons.push(
-          "MA20/MA60 초기 정배열"
-        );
-      }
-
-      if (freshAlignment) {
-        entrySetup += 10;
-
-        entryReasons.push(
-          "정배열 신규 형성"
-        );
-      } else if (
-        alignment &&
-        ma20To60Gap <= 5
-      ) {
-        entrySetup += 6;
-      }
-
-      if (
-        distance20 >= 0 &&
-        distance20 <= 4
-      ) {
-        entrySetup += 8;
-
-        entryReasons.push(
-          "MA20 이격 부담 낮음"
-        );
-      } else if (
-        distance20 > 4 &&
-        distance20 <= 8
-      ) {
-        entrySetup += 5;
-      } else if (
-        distance20 > 8 &&
-        distance20 <= 12
-      ) {
-        entrySetup += 2;
-      }
-
-      entrySetup =
-        clamp(
-          entrySetup,
-          0,
-          30
-        );
-
-      /* C. BREAKOUT 20 */
-
-      if (breakout20) {
-        entryBreakout += 12;
-
-        entryReasons.push(
-          "20일 고점 돌파"
-        );
-      } else if (
-        nearBreakout
-      ) {
-        entryBreakout += 8;
-
-        entryReasons.push(
-          "20일 고점 돌파 직전"
-        );
-      }
-
-      if (
-        return5 > 0 &&
-        return5 <= 8
-      ) {
-        entryBreakout += 4;
-      }
-
-      if (
-        return10 > 0 &&
-        return10 <= 15
-      ) {
-        entryBreakout += 4;
-      }
-
-      entryBreakout =
-        clamp(
-          entryBreakout,
-          0,
-          20
-        );
-
-      /* D. ACTIVITY 25 */
-
-      if (valueRatio >= 2) {
-        entryActivity += 15;
-
-        entryReasons.push(
-          "거래대금 강한 유입"
-        );
-      } else if (
-        valueRatio >= 1.5
-      ) {
-        entryActivity += 12;
-
-        entryReasons.push(
-          "거래대금 증가"
-        );
-      } else if (
-        valueRatio >= 1.2
-      ) {
-        entryActivity += 8;
-      } else if (
-        valueRatio >= 1
-      ) {
-        entryActivity += 4;
-      }
-
-      if (volumeRatio >= 1.8) {
-        entryActivity += 10;
-
-        entryReasons.push(
-          "거래량 강한 확장"
-        );
-      } else if (
-        volumeRatio >= 1.5
-      ) {
-        entryActivity += 8;
-      } else if (
-        volumeRatio >= 1.2
-      ) {
-        entryActivity += 5;
-      }
-
-      entryActivity =
-        clamp(
-          entryActivity,
-          0,
-          25
-        );
-
-      /* E. PENALTY */
-
-      if (return5 >= 20) {
-        entryPenalty += 20;
-
-        entryWarnings.push(
-          "5일 급등 - 추격 위험"
-        );
-      } else if (
-        return5 >= 15
-      ) {
-        entryPenalty += 12;
-
-        entryWarnings.push(
-          "최근 단기 급등"
-        );
-      } else if (
-        return5 >= 10
-      ) {
-        entryPenalty += 5;
-      }
-
-      if (return20 >= 40) {
-        entryPenalty += 18;
-
-        entryWarnings.push(
-          "20일 상승폭 과대"
-        );
-      } else if (
-        return20 >= 30
-      ) {
-        entryPenalty += 10;
-      }
-
-      if (distance20 >= 20) {
-        entryPenalty += 20;
-
-        entryWarnings.push(
-          "MA20 극단적 과이격"
-        );
-      } else if (
-        distance20 >= 15
-      ) {
-        entryPenalty += 12;
-
-        entryWarnings.push(
-          "MA20 과이격"
-        );
-      } else if (
-        distance20 >= 12
-      ) {
-        entryPenalty += 5;
-      }
-
-      if (
-        exhaustionScore >= 75
-      ) {
-        entryPenalty += 50;
-
-        entryWarnings.push(
-          "공세 소멸 위험 매우 높음"
-        );
-      } else if (
-        exhaustionScore >= 50
-      ) {
-        entryPenalty += 25;
-
-        entryWarnings.push(
-          "공세 소멸 위험 상승"
-        );
-      } else if (
-        exhaustionScore >= 25
-      ) {
-        entryPenalty += 10;
-      }
-
-      if (
-        alignment &&
-        alignment5DaysAgo &&
-        return20 >= 20 &&
-        distance20 >= 8
-      ) {
-        entryPenalty += 8;
-
-        entryWarnings.push(
-          "기존 상승 추세 진행 중 - 초입 매력 감소"
-        );
-      }
-
-      let entryScore =
-        entryTrend +
-        entrySetup +
-        entryBreakout +
-        entryActivity -
-        entryPenalty;
-
-      entryScore =
-        clamp(
-          Math.round(
-            entryScore
-          ),
-          0,
-          100
-        );
-
-      /* =====================================================
-         STAGE
-      ===================================================== */
-
-      let stage =
-        "DISCOVERY";
-
-      if (
-        exhaustionScore >= 75
-      ) {
-        stage =
-          "EXHAUSTING";
-      } else if (
-        close < ma20 &&
-        ma5 < ma20
-      ) {
-        stage =
-          "BROKEN";
-      } else if (
-        leaderScore >= 80 &&
-        alignment
-      ) {
-        stage =
-          "LEADER";
-      } else if (
-        leaderScore >= 70 &&
-        exhaustionScore >= 40
-      ) {
-        stage =
-          "MATURE";
-      } else if (
-        earlyScore >= 70 ||
-        freshGoldenCross ||
-        freshAlignment
-      ) {
-        stage =
-          "EMERGING";
-      } else if (
-        leaderScore >= 60
-      ) {
-        stage =
-          "WATCH";
-      }
-
-      /* =====================================================
-         ENTRY STATUS
-      ===================================================== */
-
-      let entryStatus =
-        "AVOID";
-
-      if (
-        exhaustionScore >= 75
-      ) {
-        entryStatus =
-          "BLOCKED";
-      } else if (
-        entryScore >= 80
-      ) {
-        entryStatus =
-          "ATTRACTIVE";
-      } else if (
-        entryScore >= 65
-      ) {
-        entryStatus =
-          "WATCH";
-      } else if (
-        entryScore >= 50
-      ) {
-        entryStatus =
-          "NEUTRAL";
-      }
-
-      return {
-        ok: true,
-
-        code,
-
-        name:
-          latest.name ||
-          candidate.name,
-
-        market:
-          latest.market,
-
-        date:
-          latest.date,
-
-        price:
-          close,
-
-        changeRate:
-          num(
-            candidate.changeRate
-          ),
-
-        discoveryScore:
-          num(
-            candidate.discoveryScore
-          ),
-
-        tradingValue:
-          num(
-            candidate.tradingValue
-          ),
-
-        marketCap:
-          num(
-            candidate.marketCap
-          ),
-
-        collectedDays:
-          newestFirst.length,
-
-        stage,
-
-        entryStatus,
-
-        blocked:
-          exhaustionScore >= 75,
-
-        scores: {
-          leader:
-            leaderScore,
-
-          early:
-            earlyScore,
-
-          exhaustion:
-            exhaustionScore,
-
-          entry:
-            entryScore
-        },
-
-        scoreDetail: {
-          entry: {
-            trend:
-              entryTrend,
-
-            setup:
-              entrySetup,
-
-            breakout:
-              entryBreakout,
-
-            activity:
-              entryActivity,
-
-            penalty:
-              -entryPenalty
-          }
-        },
-
-        signals: {
-          alignment,
-
-          freshAlignment,
-
-          freshGoldenCross,
-
-          ma20Rising,
-
-          ma60Rising,
-
-          ma20To60Gap:
-            Number(
-              ma20To60Gap.toFixed(2)
-            ),
-
-          distance20:
-            Number(
-              distance20.toFixed(2)
-            ),
-
-          distance60:
-            Number(
-              distance60.toFixed(2)
-            ),
-
-          return5:
-            Number(
-              return5.toFixed(2)
-            ),
-
-          return10:
-            Number(
-              return10.toFixed(2)
-            ),
-
-          return20:
-            Number(
-              return20.toFixed(2)
-            ),
-
-          return60:
-            Number(
-              return60.toFixed(2)
-            ),
-
-          volumeRatio:
-            Number(
-              volumeRatio.toFixed(2)
-            ),
-
-          tradingValueRatio:
-            Number(
-              valueRatio.toFixed(2)
-            ),
-
-          breakout20,
-
-          nearBreakout
-        },
-
-        reasons: {
-          leader:
-            leaderReasons.slice(
-              0,
-              4
-            ),
-
-          early:
-            earlyReasons.slice(
-              0,
-              4
-            ),
-
-          entry:
-            entryReasons.slice(
-              0,
-              5
-            ),
-
-          exhaustion:
-            exhaustionReasons.slice(
-              0,
-              4
-            )
-        },
-
-        warnings: {
-          leader:
-            leaderWarnings.slice(
-              0,
-              3
-            ),
-
-          early:
-            earlyWarnings.slice(
-              0,
-              3
-            ),
-
-          entry:
-            entryWarnings.slice(
-              0,
-              4
-            )
-        }
-      };
-    }
-
-    /* =========================================================
-       4. ANALYZE + AUTO REFILL
-    ========================================================= */
+      })
+      .sort(
+        (a, b) =>
+          b.discoveryScore -
+          a.discoveryScore
+      )
+      .slice(0, 80);
+
+    /* =====================================================
+       STOCK ANALYSIS
+    ===================================================== */
 
     const analyzed = [];
     const skipped = [];
 
-    for (
-      const candidate of candidates
-    ) {
-      if (
-        analyzed.length >= limit
-      ) {
-        break;
-      }
+    for (const stock of discoveryCandidates) {
+      const code = String(stock.code);
 
       const history =
-        histories.get(
-          String(candidate.code)
-        ) || [];
+        historyMap.get(code) || [];
 
-      if (
-        history.length <
-        MIN_ANALYSIS_DAYS
-      ) {
+      /* 최소 20 거래일 */
+
+      if (history.length < 20) {
         skipped.push({
-          code:
-            String(candidate.code),
-
-          name:
-            candidate.name,
-
-          reason:
-            `history 부족 (${history.length}일)`
+          code,
+          name: stock.name,
+          market: stock.market,
+          reason: `history 부족 (${history.length}일)`
         });
 
         continue;
       }
 
-      const result =
-        analyzeStock(
-          candidate,
-          history
-        );
+      const recent = history.slice(-60);
 
-      if (result.ok) {
-        analyzed.push(result);
-      } else {
-        skipped.push({
-          code:
-            result.code,
-
-          name:
-            result.name,
-
-          reason:
-            result.error
-        });
-      }
-    }
-
-    /* =========================================================
-       BUYABLE
-    ========================================================= */
-
-    const buyable =
-      analyzed.filter(
-        stock => {
-          if (stock.blocked) {
-            return false;
-          }
-
-          if (
-            stock.scores.exhaustion >=
-            75
-          ) {
-            return false;
-          }
-
-          if (
-            stock.stage ===
-              "BROKEN" ||
-            stock.stage ===
-              "EXHAUSTING"
-          ) {
-            return false;
-          }
-
-          return true;
-        }
+      const closes = recent.map(row =>
+        num(row.close)
       );
 
-    /* =========================================================
-       FINAL RANKINGS
-    ========================================================= */
+      const volumes = recent.map(row =>
+        num(row.volume)
+      );
 
-    const entryRanking =
-      [...buyable]
-        .sort(
-          (a, b) => {
-            if (
-              b.scores.entry !==
-              a.scores.entry
-            ) {
-              return (
-                b.scores.entry -
-                a.scores.entry
-              );
-            }
+      const tradingValues = recent.map(row =>
+        num(row.tradingValue)
+      );
 
-            if (
-              a.scores.exhaustion !==
-              b.scores.exhaustion
-            ) {
-              return (
-                a.scores.exhaustion -
-                b.scores.exhaustion
-              );
-            }
+      const current =
+        num(stock.close) ||
+        closes[closes.length - 1];
 
-            return (
-              b.scores.early -
-              a.scores.early
-            );
-          }
-        )
-        .slice(0, 15);
+      /* ===================================================
+         MOVING AVERAGES
+      =================================================== */
 
-    const leaderRanking =
-      [...analyzed]
-        .filter(
-          stock =>
-            !stock.blocked &&
-            stock.scores.exhaustion <
-              75
-        )
-        .sort(
-          (a, b) => {
-            if (
-              b.scores.leader !==
-              a.scores.leader
-            ) {
-              return (
-                b.scores.leader -
-                a.scores.leader
-              );
-            }
+      const ma5 = average(
+        closes.slice(-5)
+      );
 
-            return (
-              a.scores.exhaustion -
-              b.scores.exhaustion
-            );
-          }
-        )
-        .slice(0, 15);
+      const ma10 = average(
+        closes.slice(-10)
+      );
 
-    const earlyRanking =
-      [...buyable]
-        .sort(
-          (a, b) => {
-            if (
-              b.scores.early !==
-              a.scores.early
-            ) {
-              return (
-                b.scores.early -
-                a.scores.early
-              );
-            }
+      const ma20 = average(
+        closes.slice(-20)
+      );
 
-            return (
-              b.scores.entry -
-              a.scores.entry
-            );
-          }
-        )
-        .slice(0, 15);
+      const ma40 =
+        closes.length >= 40
+          ? average(
+              closes.slice(-40)
+            )
+          : ma20;
 
-    const exhaustionRanking =
-      [...analyzed]
-        .filter(
-          stock =>
-            stock.scores.exhaustion >=
-            25
-        )
+      /* ===================================================
+         20 DAY RANGE
+      =================================================== */
+
+      const prev20 = closes.slice(
+        -21,
+        -1
+      );
+
+      const high20 = prev20.length
+        ? Math.max(...prev20)
+        : current;
+
+      const low20 = prev20.length
+        ? Math.min(...prev20)
+        : current;
+
+      /* ===================================================
+         VOLUME / TRADING VALUE
+      =================================================== */
+
+      const avgVolume20 = average(
+        volumes.slice(-20)
+      );
+
+      const avgTradingValue20 = average(
+        tradingValues.slice(-20)
+      );
+
+      const latestVolume =
+        num(stock.volume) ||
+        volumes[volumes.length - 1];
+
+      const latestTradingValue =
+        num(stock.tradingValue) ||
+        tradingValues[
+          tradingValues.length - 1
+        ];
+
+      const volumeRatio =
+        avgVolume20 > 0
+          ? latestVolume / avgVolume20
+          : 0;
+
+      const valueRatio =
+        avgTradingValue20 > 0
+          ? latestTradingValue /
+            avgTradingValue20
+          : 0;
+
+      /* ===================================================
+         RETURNS
+      =================================================== */
+
+      const return5 =
+        closes.length >= 6
+          ? (current /
+                closes[
+                  closes.length - 6
+                ] -
+              1) *
+            100
+          : 0;
+
+      const return20 =
+        closes.length >= 21
+          ? (current /
+                closes[
+                  closes.length - 21
+                ] -
+              1) *
+            100
+          : 0;
+
+      const distanceMa20 =
+        ma20 > 0
+          ? (current / ma20 - 1) * 100
+          : 0;
+
+      const breakoutPct =
+        high20 > 0
+          ? (current / high20 - 1) *
+            100
+          : 0;
+
+      const rangePosition =
+        high20 > low20
+          ? ((current - low20) /
+              (high20 - low20)) *
+            100
+          : 50;
+
+      /* ===================================================
+         TREND SCORE
+      =================================================== */
+
+      let trendScore = 0;
+
+      if (current > ma5) {
+        trendScore += 20;
+      }
+
+      if (ma5 > ma10) {
+        trendScore += 20;
+      }
+
+      if (ma10 > ma20) {
+        trendScore += 25;
+      }
+
+      if (ma20 > ma40) {
+        trendScore += 20;
+      }
+
+      trendScore += clamp(
+        return20,
+        -10,
+        15
+      );
+
+      trendScore = clamp(
+        trendScore,
+        0,
+        100
+      );
+
+      /* ===================================================
+         MOMENTUM SCORE
+      =================================================== */
+
+      const momentumScore = clamp(
+        45 +
+          return5 * 2 +
+          return20 * 0.8,
+        0,
+        100
+      );
+
+      /* ===================================================
+         ENERGY SCORE
+      =================================================== */
+
+      const energyScore = clamp(
+        30 +
+          Math.min(volumeRatio, 5) *
+            15 +
+          Math.min(valueRatio, 5) *
+            10,
+        0,
+        100
+      );
+
+      /* ===================================================
+         BREAKOUT SCORE
+      =================================================== */
+
+      const breakoutScore = clamp(
+        55 +
+          breakoutPct * 8 +
+          (rangePosition - 70) * 0.5,
+        0,
+        100
+      );
+
+      /* ===================================================
+         OVERHEAT SCORE
+      =================================================== */
+
+      let overheatScore = 0;
+
+      if (distanceMa20 > 8) {
+        overheatScore +=
+          (distanceMa20 - 8) * 3;
+      }
+
+      if (return5 > 15) {
+        overheatScore +=
+          (return5 - 15) * 2;
+      }
+
+      if (return20 > 35) {
+        overheatScore +=
+          (return20 - 35) * 1.5;
+      }
+
+      overheatScore = clamp(
+        overheatScore,
+        0,
+        100
+      );
+
+      /* ===================================================
+         LEADER SCORE
+      =================================================== */
+
+      const leaderScore = clamp(
+        trendScore * 0.35 +
+          momentumScore * 0.25 +
+          energyScore * 0.2 +
+          breakoutScore * 0.2 -
+          overheatScore * 0.15,
+        0,
+        100
+      );
+
+      /* ===================================================
+         EARLY SCORE
+      =================================================== */
+
+      const earlyTrend = clamp(
+        50 +
+          (ma5 /
+              Math.max(ma20, 1) -
+            1) *
+            500,
+        0,
+        100
+      );
+
+      const earlyScore = clamp(
+        earlyTrend * 0.3 +
+          energyScore * 0.3 +
+          breakoutScore * 0.2 +
+          momentumScore * 0.2 -
+          overheatScore * 0.3,
+        0,
+        100
+      );
+
+      /* ===================================================
+         ENTRY SCORE
+      =================================================== */
+
+      const alignmentScore =
+        (current > ma5 ? 20 : 0) +
+        (ma5 > ma10 ? 25 : 0) +
+        (ma10 > ma20 ? 30 : 0) +
+        (ma20 > ma40 ? 25 : 0);
+
+      const entryScore = clamp(
+        alignmentScore * 0.3 +
+          breakoutScore * 0.3 +
+          energyScore * 0.25 +
+          momentumScore * 0.15 -
+          overheatScore * 0.35,
+        0,
+        100
+      );
+
+      /* ===================================================
+         EXHAUSTION SCORE
+      =================================================== */
+
+      const exhaustionScore = clamp(
+        overheatScore * 0.5 +
+          Math.max(
+            0,
+            return20 - 20
+          ) *
+            1.2 +
+          Math.max(
+            0,
+            distanceMa20 - 10
+          ) *
+            2 +
+          (volumeRatio > 3 ? 15 : 0),
+        0,
+        100
+      );
+
+      /* ===================================================
+         RESULT
+      =================================================== */
+
+      analyzed.push({
+        code,
+
+        name: stock.name,
+
+        market: stock.market,
+
+        close: current,
+
+        changeRate: round(
+          stock.changeRate
+        ),
+
+        volume: latestVolume,
+
+        tradingValue:
+          latestTradingValue,
+
+        marketCap: num(
+          stock.marketCap
+        ),
+
+        historyDays:
+          history.length,
+
+        discoveryScore:
+          stock.discoveryScore,
+
+        scores: {
+          entry: round(entryScore),
+          leader: round(leaderScore),
+          early: round(earlyScore),
+          exhaustion: round(
+            exhaustionScore
+          )
+        },
+
+        indicators: {
+          ma5: round(ma5),
+
+          ma10: round(ma10),
+
+          ma20: round(ma20),
+
+          ma40: round(ma40),
+
+          return5: round(return5),
+
+          return20: round(return20),
+
+          distanceMa20: round(
+            distanceMa20
+          ),
+
+          breakoutPct: round(
+            breakoutPct
+          ),
+
+          rangePosition: round(
+            rangePosition
+          ),
+
+          volumeRatio: round(
+            volumeRatio
+          ),
+
+          tradingValueRatio: round(
+            valueRatio
+          )
+        }
+      });
+    }
+
+    /* =====================================================
+       RANKINGS
+    ===================================================== */
+
+    function makeRanking(
+      type,
+      limit = 10
+    ) {
+      return analyzed
+        .slice()
         .sort(
           (a, b) =>
-            b.scores.exhaustion -
-            a.scores.exhaustion
+            b.scores[type] -
+            a.scores[type]
         )
-        .slice(0, 15);
+        .slice(0, limit)
+        .map((stock, index) => ({
+          rank: index + 1,
+          ...stock
+        }));
+    }
 
-    /* =========================================================
+    const entryRanking =
+      makeRanking("entry");
+
+    const leaderRanking =
+      makeRanking("leader");
+
+    const earlyRanking =
+      makeRanking("early");
+
+    const exhaustionRanking =
+      makeRanking("exhaustion");
+
+    /* =====================================================
        RESPONSE
-    ========================================================= */
+    ===================================================== */
 
     return res.status(200).json({
       ok: true,
 
       version:
-        "LEADER_CYCLE_RANKINGS_V8",
+        "LEADER_CYCLE_RANKINGS_V10_HISTORY_FILE",
 
-      date:
-        scan.date || null,
+      date: snapshot.date,
 
       philosophy: {
         leader:
@@ -2380,103 +918,45 @@ module.exports = async function handler(req, res) {
           "정배열 형성·돌파·거래에너지가 동시에 나타나는 공세 시작 구간"
       },
 
+      architecture:
+        "MARKET_SNAPSHOT + STATIC_MARKET_HISTORY",
+
       performance: {
         elapsedMs:
-          Date.now() -
-          startedAt,
+          Date.now() - startedAt,
 
-        architecture:
-          "BULK_KRX_HISTORY_V8_EARLY_STOP",
+        krxHistoryRequests: 0,
 
-        stockDetailCalls: 0,
-
-        marketHistoryCalls: 0,
-
-        krxRequests,
-
-        historyBatches,
-
-        earlyStop,
-
-        earlyStopReason,
-
-        fullHistoryCandidates:
-          historyState.full,
-
-        minimumHistoryCandidates:
-          historyState.usable,
-
-        requestedCandidates:
-          limit,
-
-        scanCandidates:
-          candidates.length,
-
-        usableCandidates:
-          analyzed.length,
-
-        skippedCandidates:
-          skipped.length
+        historyFileStocks:
+          historyMap.size
       },
 
       stats: {
         marketStocks:
-          num(
-            scan.market
-              ?.totalStocks
-          ),
+          marketStocks.length,
 
         investableStocks:
-          num(
-            scan.market
-              ?.investableStocks
-          ),
+          investableStocks.length,
 
         discoveryCandidates:
-          candidates.length,
-
-        target:
-          limit,
+          discoveryCandidates.length,
 
         analyzed:
           analyzed.length,
 
         skipped:
-          skipped.length,
-
-        buyable:
-          buyable.length
-      },
-
-      scoreGuide: {
-        discovery:
-          "정밀분석 대상을 찾기 위한 1차 시장 탐색 점수",
-
-        leader:
-          "현재 실제 주도주로서 추세·정배열·모멘텀·거래활동·지속성을 평가",
-
-        early:
-          "차기 주도주로 넘어가는 초기 전환·거래에너지·가격 위치를 평가",
-
-        exhaustion:
-          "공세 소멸 및 추세 종료 위험. 높을수록 위험",
-
-        entry:
-          "단순 강도가 아니라 정배열 신규 형성·골든크로스·돌파·거래에너지와 낮은 과열도를 이용해 공세 시작 위치를 평가"
+          skipped.length
       },
 
       topPicks: {
         entry:
-          entryRanking[0] ||
-          null,
+          entryRanking[0] || null,
 
         leader:
-          leaderRanking[0] ||
-          null,
+          leaderRanking[0] || null,
 
         early:
-          earlyRanking[0] ||
-          null,
+          earlyRanking[0] || null,
 
         exhaustion:
           exhaustionRanking[0] ||
@@ -2491,14 +971,11 @@ module.exports = async function handler(req, res) {
 
       exhaustionRanking,
 
-      failed: [],
-
-      skipped
+      skipped: skipped.slice(0, 30)
     });
-
   } catch (error) {
     console.error(
-      "RANKINGS V8 ERROR",
+      "RANKINGS V10 ERROR",
       error
     );
 
@@ -2506,17 +983,14 @@ module.exports = async function handler(req, res) {
       ok: false,
 
       version:
-        "LEADER_CYCLE_RANKINGS_V8",
+        "LEADER_CYCLE_RANKINGS_V10_HISTORY_FILE",
+
+      error: String(
+        error?.message || error
+      ),
 
       elapsedMs:
-        Date.now() -
-        startedAt,
-
-      error:
-        String(
-          error?.message ||
-          error
-        )
+        Date.now() - startedAt
     });
   }
 };
