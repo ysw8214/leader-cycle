@@ -3,22 +3,19 @@ module.exports = async function handler(req, res) {
 
   try {
     /* =========================================================
-       LEADER CYCLE - RANKINGS V8
+       LEADER CYCLE - RANKINGS V9 FAST
 
-       V7 SCORE LOGIC PRESERVED
-
-       변경점
+       목표
        ---------------------------------------------------------
-       1. MARKET-SCAN 후보 발굴
-       2. KRX BULK HISTORY 유지
-       3. 종목별 API 반복 호출 없음
-       4. V7의 limit * 2 완료 조건 제거
-       5. scan 상위 순서 기준 실제 필요한 limit개가
-          분석 가능한 상태가 되면 history 수집 조기 종료
-       6. 신규상장/history 부족 종목은 자동 건너뛰고
-          다음 후보까지 history 확보
-       7. LEADER / EARLY / EXHAUSTION / ENTRY 점수식은
-          V7 그대로 유지
+       - V8 점수 철학 유지
+       - 종목별 API 호출 없음
+       - market-scan 후보 사용
+       - KRX 날짜별 BULK HISTORY
+       - 후보의 market 정보를 이용해 불필요한 시장 조회 감소
+       - Set 기반 중복 제거
+       - 60일 이상 확보 시 분석 가능
+       - 100일 확보 가능하면 100일 사용
+       - 신규상장 종목 때문에 전체 분석이 막히지 않음
 
        구조
        ---------------------------------------------------------
@@ -26,45 +23,39 @@ module.exports = async function handler(req, res) {
            ↓
        후보 최대 limit * 3
            ↓
-       KRX 날짜별 BULK 조회
+       후보 시장 분류
            ↓
-       후보별 HISTORY 축적
+       KRX BULK HISTORY
            ↓
-       상위 limit개 분석 가능 여부 확인
+       HISTORY MAP
            ↓
-       충분하면 즉시 STOP
+       V8 SCORE ENGINE
            ↓
-       V7 SCORE ENGINE
+       ENTRY / LEADER / EARLY / EXHAUSTION
     ========================================================= */
 
-    const apiKey =
-      process.env.KRX_API_KEY;
+    const apiKey = process.env.KRX_API_KEY;
 
     if (!apiKey) {
       return res.status(500).json({
         ok: false,
-        error:
-          "KRX_API_KEY 환경변수가 없습니다."
+        error: "KRX_API_KEY 환경변수가 없습니다."
       });
     }
 
     const protocol =
-      req.headers["x-forwarded-proto"] ||
-      "https";
+      req.headers["x-forwarded-proto"] || "https";
 
-    const host =
-      req.headers.host;
+    const host = req.headers.host;
 
     if (!host) {
       return res.status(500).json({
         ok: false,
-        error:
-          "host 정보를 확인할 수 없습니다."
+        error: "host 정보를 확인할 수 없습니다."
       });
     }
 
-    const baseUrl =
-      `${protocol}://${host}`;
+    const baseUrl = `${protocol}://${host}`;
 
     res.setHeader(
       "Cache-Control",
@@ -84,68 +75,45 @@ module.exports = async function handler(req, res) {
         return 0;
       }
 
-      const n =
-        Number(
-          String(value)
-            .replace(/,/g, "")
-            .trim()
-        );
+      const n = Number(
+        String(value)
+          .replace(/,/g, "")
+          .trim()
+      );
 
-      return Number.isFinite(n)
-        ? n
-        : 0;
+      return Number.isFinite(n) ? n : 0;
     }
 
-    function clamp(
-      value,
-      min,
-      max
-    ) {
+    function clamp(value, min, max) {
       return Math.max(
         min,
-        Math.min(
-          max,
-          value
-        )
+        Math.min(max, value)
       );
     }
 
-    function pct(
-      current,
-      previous
-    ) {
-      current =
-        num(current);
-
-      previous =
-        num(previous);
+    function pct(current, previous) {
+      current = num(current);
+      previous = num(previous);
 
       if (!previous) {
         return 0;
       }
 
       return (
-        (
-          current -
-          previous
-        ) /
-        previous
-      ) * 100;
+        ((current - previous) /
+          previous) *
+        100
+      );
     }
 
     function average(values) {
-      if (
-        !Array.isArray(values)
-      ) {
+      if (!Array.isArray(values)) {
         return 0;
       }
 
-      const valid =
-        values
-          .map(num)
-          .filter(
-            Number.isFinite
-          );
+      const valid = values
+        .map(num)
+        .filter(Number.isFinite);
 
       if (!valid.length) {
         return 0;
@@ -153,57 +121,64 @@ module.exports = async function handler(req, res) {
 
       return (
         valid.reduce(
-          (a, b) =>
-            a + b,
+          (a, b) => a + b,
           0
-        ) /
-        valid.length
+        ) / valid.length
       );
     }
 
-    function normalizeCode(
-      value
-    ) {
-      const raw =
-        String(
-          value || ""
-        ).trim();
+    function normalizeCode(value) {
+      const raw = String(
+        value || ""
+      ).trim();
 
-      if (
-        /^\d{6}$/.test(raw)
-      ) {
+      if (/^\d{6}$/.test(raw)) {
         return raw;
       }
 
       const match =
-        raw.match(
-          /(\d{6})/
-        );
+        raw.match(/(\d{6})/);
 
       return match
         ? match[1]
         : raw;
     }
 
+    function normalizeMarket(value) {
+      const market = String(
+        value || ""
+      )
+        .trim()
+        .toUpperCase();
+
+      if (
+        market.includes("KOSDAQ") ||
+        market === "KSQ"
+      ) {
+        return "KOSDAQ";
+      }
+
+      if (
+        market.includes("KOSPI") ||
+        market === "STK"
+      ) {
+        return "KOSPI";
+      }
+
+      return null;
+    }
+
     function makeDate(date) {
       const y =
         date.getFullYear();
 
-      const m =
-        String(
-          date.getMonth() + 1
-        ).padStart(
-          2,
-          "0"
-        );
+      const m = String(
+        date.getMonth() + 1
+      ).padStart(2, "0");
 
-      const d =
-        String(
-          date.getDate()
-        ).padStart(
-          2,
-          "0"
-        );
+      const d = String(
+        date.getDate()
+      ).padStart(2, "0");
 
       return `${y}${m}${d}`;
     }
@@ -216,23 +191,17 @@ module.exports = async function handler(req, res) {
       const controller =
         new AbortController();
 
-      const timer =
-        setTimeout(
-          () =>
-            controller.abort(),
-          timeoutMs
-        );
+      const timer = setTimeout(
+        () => controller.abort(),
+        timeoutMs
+      );
 
       try {
         const response =
-          await fetch(
-            url,
-            {
-              ...options,
-              signal:
-                controller.signal
-            }
-          );
+          await fetch(url, {
+            ...options,
+            signal: controller.signal
+          });
 
         let json = null;
 
@@ -244,15 +213,10 @@ module.exports = async function handler(req, res) {
         }
 
         return {
-          ok:
-            response.ok,
-
-          status:
-            response.status,
-
+          ok: response.ok,
+          status: response.status,
           json
         };
-
       } finally {
         clearTimeout(timer);
       }
@@ -264,38 +228,33 @@ module.exports = async function handler(req, res) {
 
     const requestedLimit =
       parseInt(
-        req.query.limit ||
-        "10",
+        req.query.limit || "10",
         10
       );
 
-    const limit =
-      clamp(
-        Number.isFinite(
-          requestedLimit
-        )
-          ? requestedLimit
-          : 10,
-        4,
-        20
-      );
+    const limit = clamp(
+      Number.isFinite(requestedLimit)
+        ? requestedLimit
+        : 10,
+      4,
+      20
+    );
 
     /*
-      신규상장/history 부족 후보가 있어도
-      자동 보충 가능하도록 후보는 넉넉하게 유지.
+      history 부족 종목 자동 보충용.
+
+      기본 limit=10이면 후보 30개.
     */
 
-    const scanLimit =
-      clamp(
-        limit * 3,
-        limit,
-        50
-      );
+    const scanLimit = clamp(
+      limit * 3,
+      limit,
+      50
+    );
 
     const requestedDate =
       String(
-        req.query.date ||
-        ""
+        req.query.date || ""
       ).trim();
 
     /* =========================================================
@@ -322,19 +281,15 @@ module.exports = async function handler(req, res) {
       scanResult =
         await fetchJson(
           scanUrl,
-          10000
+          12000
         );
-
     } catch (error) {
       return res.status(504).json({
         ok: false,
-
         version:
-          "LEADER_CYCLE_RANKINGS_V8",
-
+          "LEADER_CYCLE_RANKINGS_V9_FAST",
         error:
           "market-scan timeout",
-
         detail:
           String(
             error?.message ||
@@ -356,66 +311,55 @@ module.exports = async function handler(req, res) {
     ) {
       return res.status(500).json({
         ok: false,
-
         version:
-          "LEADER_CYCLE_RANKINGS_V8",
-
+          "LEADER_CYCLE_RANKINGS_V9_FAST",
         error:
           "market-scan 호출 실패",
-
-        detail:
-          scan
+        detail: scan
       });
     }
 
     const candidates =
-      scan.candidates.slice(
-        0,
-        scanLimit
-      );
+      scan.candidates
+        .slice(0, scanLimit)
+        .map(candidate => ({
+          ...candidate,
+          code:
+            normalizeCode(
+              candidate.code
+            ),
+          market:
+            normalizeMarket(
+              candidate.market
+            )
+        }))
+        .filter(candidate =>
+          /^\d{6}$/.test(
+            candidate.code
+          )
+        );
 
-    if (
-      !candidates.length
-    ) {
+    if (!candidates.length) {
       return res.status(200).json({
         ok: true,
-
         version:
-          "LEADER_CYCLE_RANKINGS_V8",
-
+          "LEADER_CYCLE_RANKINGS_V9_FAST",
         date:
-          scan.date ||
-          null,
+          scan.date || null,
 
         stats: {
-          target:
-            limit,
-
-          candidates:
-            0,
-
-          analyzed:
-            0,
-
-          skipped:
-            0,
-
-          buyable:
-            0
+          target: limit,
+          candidates: 0,
+          analyzed: 0,
+          skipped: 0,
+          buyable: 0
         },
 
         topPicks: {
-          entry:
-            null,
-
-          leader:
-            null,
-
-          early:
-            null,
-
-          exhaustion:
-            null
+          entry: null,
+          leader: null,
+          early: null,
+          exhaustion: null
         },
 
         entryRanking: [],
@@ -427,15 +371,66 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    const candidateCodes =
-      new Set(
-        candidates.map(
-          candidate =>
-            String(
-              candidate.code
-            )
-        )
+    /* =========================================================
+       CANDIDATE MARKET MAP
+    ========================================================= */
+
+    const candidateMap =
+      new Map();
+
+    const histories =
+      new Map();
+
+    const historyDateSets =
+      new Map();
+
+    let needKospi = false;
+    let needKosdaq = false;
+    let hasUnknownMarket = false;
+
+    for (
+      const candidate of
+      candidates
+    ) {
+      candidateMap.set(
+        candidate.code,
+        candidate
       );
+
+      histories.set(
+        candidate.code,
+        []
+      );
+
+      historyDateSets.set(
+        candidate.code,
+        new Set()
+      );
+
+      if (
+        candidate.market ===
+        "KOSPI"
+      ) {
+        needKospi = true;
+      } else if (
+        candidate.market ===
+        "KOSDAQ"
+      ) {
+        needKosdaq = true;
+      } else {
+        hasUnknownMarket = true;
+      }
+    }
+
+    /*
+      market-scan에서 시장정보가 없는 후보가
+      하나라도 있으면 두 시장 모두 조회한다.
+    */
+
+    if (hasUnknownMarket) {
+      needKospi = true;
+      needKosdaq = true;
+    }
 
     /* =========================================================
        BASE DATE
@@ -451,34 +446,19 @@ module.exports = async function handler(req, res) {
     let baseDate;
 
     if (
-      /^\d{8}$/.test(
-        scanDate
-      )
+      /^\d{8}$/.test(scanDate)
     ) {
-      baseDate =
-        new Date(
-          Number(
-            scanDate.slice(
-              0,
-              4
-            )
-          ),
-
-          Number(
-            scanDate.slice(
-              4,
-              6
-            )
-          ) - 1,
-
-          Number(
-            scanDate.slice(
-              6,
-              8
-            )
-          )
-        );
-
+      baseDate = new Date(
+        Number(
+          scanDate.slice(0, 4)
+        ),
+        Number(
+          scanDate.slice(4, 6)
+        ) - 1,
+        Number(
+          scanDate.slice(6, 8)
+        )
+      );
     } else {
       const now =
         new Date();
@@ -497,10 +477,14 @@ module.exports = async function handler(req, res) {
 
     /* =========================================================
        DATE CANDIDATES
+
+       100 거래일 확보를 위해
+       달력 기준 165일.
+
+       주말은 애초에 제거.
     ========================================================= */
 
-    const candidateDates =
-      [];
+    const candidateDates = [];
 
     for (
       let i = 0;
@@ -508,13 +492,10 @@ module.exports = async function handler(req, res) {
       i++
     ) {
       const target =
-        new Date(
-          baseDate
-        );
+        new Date(baseDate);
 
       target.setDate(
-        baseDate.getDate() -
-        i
+        baseDate.getDate() - i
       );
 
       const day =
@@ -533,7 +514,7 @@ module.exports = async function handler(req, res) {
     }
 
     /* =========================================================
-       KRX ENDPOINTS
+       KRX
     ========================================================= */
 
     const KOSPI_URL =
@@ -547,8 +528,7 @@ module.exports = async function handler(req, res) {
       market
     ) {
       const endpoint =
-        market ===
-        "KOSDAQ"
+        market === "KOSDAQ"
           ? KOSDAQ_URL
           : KOSPI_URL;
 
@@ -559,88 +539,96 @@ module.exports = async function handler(req, res) {
         const result =
           await fetchJson(
             url,
-            7000,
+            6500,
             {
               headers: {
-                AUTH_KEY:
-                  apiKey
+                AUTH_KEY: apiKey,
+                Accept:
+                  "application/json"
               }
             }
           );
 
-        const rows =
+        let rows = [];
+
+        if (
           Array.isArray(
-            result.json
-              ?.OutBlock_1
+            result.json?.OutBlock_1
           )
-            ? result.json
-                .OutBlock_1
-            : [];
+        ) {
+          rows =
+            result.json.OutBlock_1;
+        } else if (
+          Array.isArray(
+            result.json?.output
+          )
+        ) {
+          rows =
+            result.json.output;
+        } else if (
+          Array.isArray(
+            result.json?.data
+          )
+        ) {
+          rows =
+            result.json.data;
+        }
 
         return {
-          ok:
-            result.ok,
-
+          ok: result.ok,
+          status:
+            result.status,
           market,
-
           date,
-
           rows
         };
-
-      } catch {
+      } catch (error) {
         return {
-          ok:
-            false,
-
+          ok: false,
+          status: 0,
           market,
-
           date,
-
-          rows: []
+          rows: [],
+          error:
+            String(
+              error?.message ||
+              error
+            )
         };
       }
     }
 
-    /* =========================================================
-       HISTORY MAP
-    ========================================================= */
-
-    const histories =
-      new Map();
-
-    candidates.forEach(
-      candidate => {
-        histories.set(
-          String(
-            candidate.code
-          ),
-          []
-        );
-      }
-    );
-
     function convertRow(
       row,
-      market
+      market,
+      fallbackDate
     ) {
+      const rawCode =
+        row.ISU_SRT_CD ||
+        row.SRT_CD ||
+        row.ISU_CD ||
+        "";
+
       const code =
         normalizeCode(
-          row.ISU_CD
+          rawCode
         );
 
       return {
         date:
           String(
             row.BAS_DD ||
+            fallbackDate ||
             ""
-          ),
+          ).trim(),
 
         code,
 
         name:
           String(
+            row.ISU_ABBRV ||
             row.ISU_NM ||
+            row.ITMS_NM ||
             ""
           ).trim(),
 
@@ -648,104 +636,188 @@ module.exports = async function handler(req, res) {
 
         open:
           num(
-            row.TDD_OPNPRC
+            row.TDD_OPNPRC ??
+            row.OPNPRC ??
+            row.OPEN
           ),
 
         high:
           num(
-            row.TDD_HGPRC
+            row.TDD_HGPRC ??
+            row.HGPRC ??
+            row.HIGH
           ),
 
         low:
           num(
-            row.TDD_LWPRC
+            row.TDD_LWPRC ??
+            row.LWPRC ??
+            row.LOW
           ),
 
         close:
           num(
-            row.TDD_CLSPRC
+            row.TDD_CLSPRC ??
+            row.CLSPRC ??
+            row.CLOSE
           ),
 
         changeRate:
           num(
-            row.FLUC_RT
+            row.FLUC_RT ??
+            row.CHG_RT ??
+            row.CHANGE_RATE
           ),
 
         volume:
           num(
-            row.ACC_TRDVOL
+            row.ACC_TRDVOL ??
+            row.TRDVOL ??
+            row.VOLUME
           ),
 
         tradingValue:
           num(
-            row.ACC_TRDVAL
+            row.ACC_TRDVAL ??
+            row.TRDVAL ??
+            row.TRADING_VALUE
           ),
 
         marketCap:
           num(
-            row.MKTCAP
+            row.MKTCAP ??
+            row.MKT_CAP ??
+            row.MARKET_CAP
           )
       };
     }
 
     /* =========================================================
-       2. BULK HISTORY V8
+       2. FAST BULK HISTORY
     ========================================================= */
 
-    const REQUIRED_DAYS =
-      100;
-
-    const MIN_ANALYSIS_DAYS =
-      60;
+    const REQUIRED_DAYS = 100;
+    const MIN_ANALYSIS_DAYS = 60;
 
     /*
-      8 → 12
+      16 날짜씩 처리.
 
-      KRX 총 요청 횟수는 같더라도
-      Vercel 왕복 batch 수를 줄인다.
+      KOSPI+KOSDAQ 모두 필요한 경우
+      최대 32 request 동시 실행.
 
-      단, 너무 크게 올려 KRX에 순간적으로
-      과도한 요청을 보내지는 않는다.
+      market 정보가 한 시장뿐이면
+      최대 16 request.
     */
 
-    const DATE_BATCH_SIZE =
-      12;
+    const DATE_BATCH_SIZE = 16;
 
-    let krxRequests =
-      0;
+    let krxRequests = 0;
+    let successfulKrxRequests = 0;
+    let failedKrxRequests = 0;
+    let historyBatches = 0;
+    let processedDates = 0;
 
-    let historyBatches =
-      0;
+    let earlyStop = false;
+    let earlyStopReason = null;
 
-    let earlyStop =
-      false;
+    function addRow(
+      row,
+      market,
+      date
+    ) {
+      const converted =
+        convertRow(
+          row,
+          market,
+          date
+        );
 
-    let earlyStopReason =
-      null;
+      const code =
+        converted.code;
+
+      const candidate =
+        candidateMap.get(code);
+
+      if (!candidate) {
+        return;
+      }
+
+      /*
+        market-scan에서 시장이 확실히 지정돼 있다면
+        다른 시장의 동일 코드 가능성 방지.
+      */
+
+      if (
+        candidate.market &&
+        candidate.market !==
+          market
+      ) {
+        return;
+      }
+
+      if (
+        !converted.date ||
+        converted.close <= 0
+      ) {
+        return;
+      }
+
+      const history =
+        histories.get(code);
+
+      const dateSet =
+        historyDateSets.get(code);
+
+      if (
+        !history ||
+        !dateSet
+      ) {
+        return;
+      }
+
+      if (
+        history.length >=
+        REQUIRED_DAYS
+      ) {
+        return;
+      }
+
+      if (
+        dateSet.has(
+          converted.date
+        )
+      ) {
+        return;
+      }
+
+      dateSet.add(
+        converted.date
+      );
+
+      history.push(
+        converted
+      );
+
+      /*
+        market 정보가 없었던 후보는
+        실제 발견 시장으로 확정.
+      */
+
+      if (
+        !candidate.market
+      ) {
+        candidate.market =
+          market;
+      }
+    }
 
     /*
-      V8 핵심.
-
       scan 순서대로 보면서
-      history가 minimum 이상 확보된 후보가
-      limit개 있는지 검사한다.
-
-      단, 가능하면 100일을 확보한다.
-
-      100일 확보 후보가 limit개면
-      즉시 종료.
-
-      끝까지 갔는데 신규상장 종목 때문에
-      100일 확보가 불가능한 경우에는
-      60일 이상 종목을 분석에서 사용한다.
+      분석 가능한 후보 개수를 계산.
     */
 
-    function countHistoryState() {
-      let full =
-        0;
-
-      let usable =
-        0;
+    function usableCandidateCount() {
+      let count = 0;
 
       for (
         const candidate of
@@ -753,42 +825,22 @@ module.exports = async function handler(req, res) {
       ) {
         const history =
           histories.get(
-            String(
-              candidate.code
-            )
+            candidate.code
           ) || [];
 
         if (
           history.length >=
           MIN_ANALYSIS_DAYS
         ) {
-          usable++;
-        }
-
-        if (
-          history.length >=
-          REQUIRED_DAYS
-        ) {
-          full++;
+          count++;
         }
       }
 
-      return {
-        full,
-        usable
-      };
+      return count;
     }
 
-    /*
-      상위 순서에서 실제로 사용할
-      limit개가 100일을 확보했는지 검사.
-
-      단순 전체 completeCount가 아니다.
-    */
-
-    function targetCandidatesComplete() {
-      let found =
-        0;
+    function fullCandidateCount() {
+      let count = 0;
 
       for (
         const candidate of
@@ -796,9 +848,35 @@ module.exports = async function handler(req, res) {
       ) {
         const history =
           histories.get(
-            String(
-              candidate.code
-            )
+            candidate.code
+          ) || [];
+
+        if (
+          history.length >=
+          REQUIRED_DAYS
+        ) {
+          count++;
+        }
+      }
+
+      return count;
+    }
+
+    /*
+      실제 scan 순서에서
+      사용할 limit개가 모두 100일 확보됐는지 검사.
+    */
+
+    function targetFullReady() {
+      let found = 0;
+
+      for (
+        const candidate of
+        candidates
+      ) {
+        const history =
+          histories.get(
+            candidate.code
           ) || [];
 
         if (
@@ -808,8 +886,7 @@ module.exports = async function handler(req, res) {
           found++;
 
           if (
-            found >=
-            limit
+            found >= limit
           ) {
             return true;
           }
@@ -821,55 +898,53 @@ module.exports = async function handler(req, res) {
 
     for (
       let i = 0;
-      i <
-      candidateDates.length;
-      i +=
-        DATE_BATCH_SIZE
+      i < candidateDates.length;
+      i += DATE_BATCH_SIZE
     ) {
-      /*
-        다음 batch 실행 전에
-        이미 목표를 달성했으면 종료
-      */
-
       if (
-        targetCandidatesComplete()
+        targetFullReady()
       ) {
-        earlyStop =
-          true;
-
+        earlyStop = true;
         earlyStopReason =
           "TARGET_FULL_HISTORY_READY";
-
         break;
       }
 
       const batch =
         candidateDates.slice(
           i,
-          i +
-          DATE_BATCH_SIZE
+          i + DATE_BATCH_SIZE
         );
 
-      const jobs =
-        [];
+      processedDates +=
+        batch.length;
+
+      const jobs = [];
 
       for (
-        const date of
-        batch
+        const date of batch
       ) {
-        jobs.push(
-          fetchMarket(
-            date,
-            "KOSPI"
-          )
-        );
+        if (needKospi) {
+          jobs.push(
+            fetchMarket(
+              date,
+              "KOSPI"
+            )
+          );
+        }
 
-        jobs.push(
-          fetchMarket(
-            date,
-            "KOSDAQ"
-          )
-        );
+        if (needKosdaq) {
+          jobs.push(
+            fetchMarket(
+              date,
+              "KOSDAQ"
+            )
+          );
+        }
+      }
+
+      if (!jobs.length) {
+        break;
       }
 
       krxRequests +=
@@ -893,110 +968,42 @@ module.exports = async function handler(req, res) {
             result.rows
           )
         ) {
+          failedKrxRequests++;
           continue;
         }
+
+        successfulKrxRequests++;
 
         for (
           const row of
           result.rows
         ) {
-          const code =
-            normalizeCode(
-              row.ISU_CD
-            );
-
-          if (
-            !candidateCodes.has(
-              code
-            )
-          ) {
-            continue;
-          }
-
-          const history =
-            histories.get(
-              code
-            );
-
-          if (!history) {
-            continue;
-          }
-
-          /*
-            이미 100일 확보한 종목은
-            추가 저장 불필요
-          */
-
-          if (
-            history.length >=
-            REQUIRED_DAYS
-          ) {
-            continue;
-          }
-
-          const converted =
-            convertRow(
-              row,
-              result.market
-            );
-
-          if (
-            !converted.date ||
-            converted.close <=
-              0
-          ) {
-            continue;
-          }
-
-          /*
-            같은 날짜 중복 방지
-          */
-
-          if (
-            history.some(
-              item =>
-                item.date ===
-                converted.date
-            )
-          ) {
-            continue;
-          }
-
-          history.push(
-            converted
+          addRow(
+            row,
+            result.market,
+            result.date
           );
         }
       }
 
-      /*
-        batch가 끝난 직후 다시 검사.
-
-        V7:
-        completeCount >= limit * 2
-
-        V8:
-        실제 필요한 limit개만 확보하면 종료.
-      */
-
       if (
-        targetCandidatesComplete()
+        targetFullReady()
       ) {
-        earlyStop =
-          true;
-
+        earlyStop = true;
         earlyStopReason =
           "TARGET_FULL_HISTORY_READY";
-
         break;
       }
     }
 
-    const historyState =
-      countHistoryState();
+    const fullHistoryCandidates =
+      fullCandidateCount();
+
+    const minimumHistoryCandidates =
+      usableCandidateCount();
 
     /* =========================================================
        3. STOCK ANALYSIS
-       V7 SCORE ENGINE
     ========================================================= */
 
     function analyzeStock(
@@ -1016,14 +1023,10 @@ module.exports = async function handler(req, res) {
           MIN_ANALYSIS_DAYS
       ) {
         return {
-          ok:
-            false,
-
+          ok: false,
           code,
-
           name:
             candidate.name,
-
           error:
             `history 부족 (${rawHistory?.length || 0}일)`
         };
@@ -1065,18 +1068,14 @@ module.exports = async function handler(req, res) {
 
         return average(
           slice.map(
-            row =>
-              row.close
+            row => row.close
           )
         );
       }
 
       const chart =
         newestFirst.map(
-          (
-            row,
-            index
-          ) => ({
+          (row, index) => ({
             ...row,
 
             ma5:
@@ -1099,23 +1098,19 @@ module.exports = async function handler(req, res) {
           })
         );
 
-      /* -------------------------------------------------------
-         과거 → 최신
-      ------------------------------------------------------- */
+      /*
+        과거 → 최신
+      */
 
       const rows =
-        [...chart]
-          .reverse();
+        [...chart].reverse();
 
       const latest =
         rows[
-          rows.length -
-          1
+          rows.length - 1
         ];
 
-      function getBack(
-        days
-      ) {
+      function getBack(days) {
         const index =
           rows.length -
           1 -
@@ -1127,24 +1122,16 @@ module.exports = async function handler(req, res) {
       }
 
       const close =
-        num(
-          latest.close
-        );
+        num(latest.close);
 
       const ma5 =
-        num(
-          latest.ma5
-        );
+        num(latest.ma5);
 
       const ma20 =
-        num(
-          latest.ma20
-        );
+        num(latest.ma20);
 
       const ma60 =
-        num(
-          latest.ma60
-        );
+        num(latest.ma60);
 
       if (
         close <= 0 ||
@@ -1152,14 +1139,10 @@ module.exports = async function handler(req, res) {
         ma60 <= 0
       ) {
         return {
-          ok:
-            false,
-
+          ok: false,
           code,
-
           name:
             candidate.name,
-
           error:
             "이동평균 데이터 부족"
         };
@@ -1215,27 +1198,21 @@ module.exports = async function handler(req, res) {
 
       const ma20FiveDaysAgo =
         row5
-          ? num(
-              row5.ma20
-            )
+          ? num(row5.ma20)
           : 0;
 
       const ma60FiveDaysAgo =
         row5
-          ? num(
-              row5.ma60
-            )
+          ? num(row5.ma60)
           : 0;
 
       const ma20Rising =
-        ma20FiveDaysAgo >
-          0 &&
+        ma20FiveDaysAgo > 0 &&
         ma20 >
           ma20FiveDaysAgo;
 
       const ma60Rising =
-        ma60FiveDaysAgo >
-          0 &&
+        ma60FiveDaysAgo > 0 &&
         ma60 >
           ma60FiveDaysAgo;
 
@@ -1267,32 +1244,21 @@ module.exports = async function handler(req, res) {
 
       if (row5) {
         const oldClose =
-          num(
-            row5.close
-          );
+          num(row5.close);
 
         const oldMa5 =
-          num(
-            row5.ma5
-          );
+          num(row5.ma5);
 
         const oldMa20 =
-          num(
-            row5.ma20
-          );
+          num(row5.ma20);
 
         const oldMa60 =
-          num(
-            row5.ma60
-          );
+          num(row5.ma60);
 
         alignment5DaysAgo =
-          oldClose >
-            oldMa5 &&
-          oldMa5 >
-            oldMa20 &&
-          oldMa20 >
-            oldMa60;
+          oldClose > oldMa5 &&
+          oldMa5 > oldMa20 &&
+          oldMa20 > oldMa60;
       }
 
       const freshAlignment =
@@ -1301,24 +1267,19 @@ module.exports = async function handler(req, res) {
 
       const oldMa20 =
         row5
-          ? num(
-              row5.ma20
-            )
+          ? num(row5.ma20)
           : 0;
 
       const oldMa60 =
         row5
-          ? num(
-              row5.ma60
-            )
+          ? num(row5.ma60)
           : 0;
 
       const freshGoldenCross =
         ma20 >= ma60 &&
         oldMa20 > 0 &&
         oldMa60 > 0 &&
-        oldMa20 <=
-          oldMa60;
+        oldMa20 <= oldMa60;
 
       /* =====================================================
          ACTIVITY
@@ -1336,16 +1297,14 @@ module.exports = async function handler(req, res) {
       const avgVolume5 =
         average(
           recent5.map(
-            row =>
-              row.volume
+            row => row.volume
           )
         );
 
       const avgVolume20 =
         average(
           previous20.map(
-            row =>
-              row.volume
+            row => row.volume
           )
         );
 
@@ -1413,10 +1372,8 @@ module.exports = async function handler(req, res) {
           : 0;
 
       const nearBreakout =
-        distanceFromHigh20 >=
-          -5 &&
-        distanceFromHigh20 <=
-          0;
+        distanceFromHigh20 >= -5 &&
+        distanceFromHigh20 <= 0;
 
       /* =====================================================
          LEADER
@@ -1431,144 +1388,96 @@ module.exports = async function handler(req, res) {
       const leaderReasons = [];
       const leaderWarnings = [];
 
-      if (
-        close > ma20
-      ) {
-        leaderTrend +=
-          6;
-
+      if (close > ma20) {
+        leaderTrend += 6;
         leaderReasons.push(
           "현재가 MA20 위"
         );
       }
 
-      if (
-        close > ma60
-      ) {
-        leaderTrend +=
-          6;
-
+      if (close > ma60) {
+        leaderTrend += 6;
         leaderReasons.push(
           "현재가 MA60 위"
         );
       }
 
-      if (
-        ma5 > ma20
-      ) {
-        leaderTrend +=
-          6;
+      if (ma5 > ma20) {
+        leaderTrend += 6;
       }
 
-      if (
-        ma20Rising
-      ) {
-        leaderTrend +=
-          6;
-
+      if (ma20Rising) {
+        leaderTrend += 6;
         leaderReasons.push(
           "MA20 상승"
         );
       }
 
-      if (
-        ma60Rising
-      ) {
-        leaderTrend +=
-          6;
-
+      if (ma60Rising) {
+        leaderTrend += 6;
         leaderReasons.push(
           "MA60 상승"
         );
       }
 
-      if (
-        alignment
-      ) {
-        leaderAlignment =
-          20;
+      if (alignment) {
+        leaderAlignment = 20;
 
         leaderReasons.push(
           "완전 정배열"
         );
-
       } else if (
         close > ma60 &&
         ma5 > ma20 &&
         ma20Rising &&
-        ma20To60Gap >=
-          -3
+        ma20To60Gap >= -3
       ) {
-        leaderAlignment =
-          13;
+        leaderAlignment = 13;
 
         leaderReasons.push(
           "정배열 전환 근접"
         );
-
       } else if (
         close > ma20 &&
         ma5 > ma20
       ) {
-        leaderAlignment =
-          7;
+        leaderAlignment = 7;
       }
 
-      if (
-        return20 >= 15
-      ) {
-        leaderMomentum +=
-          8;
-
+      if (return20 >= 15) {
+        leaderMomentum += 8;
       } else if (
         return20 >= 8
       ) {
-        leaderMomentum +=
-          6;
-
+        leaderMomentum += 6;
       } else if (
         return20 >= 3
       ) {
-        leaderMomentum +=
-          4;
-
+        leaderMomentum += 4;
       } else if (
         return20 > 0
       ) {
-        leaderMomentum +=
-          2;
+        leaderMomentum += 2;
       }
 
-      if (
-        return60 >= 25
-      ) {
-        leaderMomentum +=
-          8;
-
+      if (return60 >= 25) {
+        leaderMomentum += 8;
       } else if (
         return60 >= 15
       ) {
-        leaderMomentum +=
-          6;
-
+        leaderMomentum += 6;
       } else if (
         return60 >= 5
       ) {
-        leaderMomentum +=
-          4;
-
+        leaderMomentum += 4;
       } else if (
         return60 > 0
       ) {
-        leaderMomentum +=
-          2;
+        leaderMomentum += 2;
       }
 
-      if (
-        breakout20
-      ) {
-        leaderMomentum +=
-          4;
+      if (breakout20) {
+        leaderMomentum += 4;
 
         leaderReasons.push(
           "20일 고점 돌파"
@@ -1579,72 +1488,51 @@ module.exports = async function handler(req, res) {
         avgValue5 >=
         500000000000
       ) {
-        leaderActivity +=
-          10;
-
+        leaderActivity += 10;
       } else if (
         avgValue5 >=
         200000000000
       ) {
-        leaderActivity +=
-          8;
-
+        leaderActivity += 8;
       } else if (
         avgValue5 >=
         100000000000
       ) {
-        leaderActivity +=
-          6;
-
+        leaderActivity += 6;
       } else if (
         avgValue5 >=
         30000000000
       ) {
-        leaderActivity +=
-          4;
-
+        leaderActivity += 4;
       } else if (
         avgValue5 >=
         10000000000
       ) {
-        leaderActivity +=
-          2;
+        leaderActivity += 2;
       }
 
-      if (
-        valueRatio >= 2
-      ) {
-        leaderActivity +=
-          6;
+      if (valueRatio >= 2) {
+        leaderActivity += 6;
 
         leaderReasons.push(
           "거래대금 강한 증가"
         );
-
       } else if (
         valueRatio >= 1.4
       ) {
-        leaderActivity +=
-          5;
-
+        leaderActivity += 5;
       } else if (
         valueRatio >= 1.1
       ) {
-        leaderActivity +=
-          3;
+        leaderActivity += 3;
       }
 
-      if (
-        volumeRatio >= 1.5
-      ) {
-        leaderActivity +=
-          4;
-
+      if (volumeRatio >= 1.5) {
+        leaderActivity += 4;
       } else if (
         volumeRatio >= 1.1
       ) {
-        leaderActivity +=
-          2;
+        leaderActivity += 2;
       }
 
       leaderActivity =
@@ -1654,32 +1542,20 @@ module.exports = async function handler(req, res) {
           20
         );
 
-      if (
-        return5 > 0
-      ) {
-        leaderPersistence +=
-          2;
+      if (return5 > 0) {
+        leaderPersistence += 2;
       }
 
-      if (
-        return10 > 0
-      ) {
-        leaderPersistence +=
-          2;
+      if (return10 > 0) {
+        leaderPersistence += 2;
       }
 
-      if (
-        return20 > 0
-      ) {
-        leaderPersistence +=
-          3;
+      if (return20 > 0) {
+        leaderPersistence += 3;
       }
 
-      if (
-        return60 > 0
-      ) {
-        leaderPersistence +=
-          3;
+      if (return60 > 0) {
+        leaderPersistence += 3;
       }
 
       let leaderScore =
@@ -1711,18 +1587,12 @@ module.exports = async function handler(req, res) {
       const earlyReasons = [];
       const earlyWarnings = [];
 
-      if (
-        ma5 > ma20
-      ) {
-        earlyTransition +=
-          6;
+      if (ma5 > ma20) {
+        earlyTransition += 6;
       }
 
-      if (
-        ma20Rising
-      ) {
-        earlyTransition +=
-          7;
+      if (ma20Rising) {
+        earlyTransition += 7;
 
         earlyReasons.push(
           "MA20 상승"
@@ -1733,37 +1603,28 @@ module.exports = async function handler(req, res) {
         ma20To60Gap >= -3 &&
         ma20To60Gap < 0
       ) {
-        earlyTransition +=
-          10;
+        earlyTransition += 10;
 
         earlyReasons.push(
           "MA20/MA60 골든크로스 임박"
         );
       }
 
-      if (
-        freshGoldenCross
-      ) {
-        earlyTransition +=
-          12;
+      if (freshGoldenCross) {
+        earlyTransition += 12;
 
         earlyReasons.push(
           "MA20/MA60 신규 골든크로스"
         );
-
       } else if (
         ma20 >= ma60 &&
         ma20To60Gap <= 5
       ) {
-        earlyTransition +=
-          7;
+        earlyTransition += 7;
       }
 
-      if (
-        freshAlignment
-      ) {
-        earlyTransition +=
-          8;
+      if (freshAlignment) {
+        earlyTransition += 8;
 
         earlyReasons.push(
           "정배열 신규 형성"
@@ -1781,111 +1642,85 @@ module.exports = async function handler(req, res) {
         return5 > 0 &&
         return5 <= 10
       ) {
-        earlyMomentum +=
-          6;
+        earlyMomentum += 6;
       }
 
       if (
         return10 > 2 &&
         return10 <= 18
       ) {
-        earlyMomentum +=
-          6;
+        earlyMomentum += 6;
       }
 
       if (
         return20 > 3 &&
         return20 <= 25
       ) {
-        earlyMomentum +=
-          8;
+        earlyMomentum += 8;
       }
 
-      if (
-        valueRatio >= 2
-      ) {
-        earlyActivity +=
-          15;
+      if (valueRatio >= 2) {
+        earlyActivity += 15;
 
         earlyReasons.push(
           "거래대금 강한 유입"
         );
-
       } else if (
         valueRatio >= 1.5
       ) {
-        earlyActivity +=
-          12;
-
+        earlyActivity += 12;
       } else if (
         valueRatio >= 1.2
       ) {
-        earlyActivity +=
-          8;
+        earlyActivity += 8;
       }
 
-      if (
-        volumeRatio >= 1.8
-      ) {
-        earlyActivity +=
-          10;
-
+      if (volumeRatio >= 1.8) {
+        earlyActivity += 10;
       } else if (
         volumeRatio >= 1.3
       ) {
-        earlyActivity +=
-          7;
-
+        earlyActivity += 7;
       } else if (
         volumeRatio >= 1.1
       ) {
-        earlyActivity +=
-          4;
+        earlyActivity += 4;
       }
 
       if (
         distance20 >= 0 &&
         distance20 <= 5
       ) {
-        earlyPosition +=
-          12;
-
+        earlyPosition += 12;
       } else if (
         distance20 > 5 &&
         distance20 <= 10
       ) {
-        earlyPosition +=
-          8;
-
+        earlyPosition += 8;
       } else if (
         distance20 > 10 &&
         distance20 <= 15
       ) {
-        earlyPosition +=
-          4;
+        earlyPosition += 4;
       }
 
       if (
         distance60 >= 0 &&
         distance60 <= 10
       ) {
-        earlyPosition +=
-          8;
-
+        earlyPosition += 8;
       } else if (
         distance60 > 10 &&
         distance60 <= 18
       ) {
-        earlyPosition +=
-          4;
+        earlyPosition += 4;
       }
 
       if (
         nearBreakout ||
         breakout20
       ) {
-        earlyPosition +=
-          5;
+        earlyPosition += 5;
 
         earlyReasons.push(
           breakout20
@@ -1894,33 +1729,24 @@ module.exports = async function handler(req, res) {
         );
       }
 
-      if (
-        return5 >= 20
-      ) {
-        earlyPenalty +=
-          12;
+      if (return5 >= 20) {
+        earlyPenalty += 12;
 
         earlyWarnings.push(
           "단기 급등"
         );
       }
 
-      if (
-        return20 >= 35
-      ) {
-        earlyPenalty +=
-          12;
+      if (return20 >= 35) {
+        earlyPenalty += 12;
 
         earlyWarnings.push(
           "20일 상승폭 과대"
         );
       }
 
-      if (
-        distance20 >= 18
-      ) {
-        earlyPenalty +=
-          10;
+      if (distance20 >= 18) {
+        earlyPenalty += 10;
 
         earlyWarnings.push(
           "MA20 과이격"
@@ -1947,27 +1773,18 @@ module.exports = async function handler(req, res) {
          EXHAUSTION
       ===================================================== */
 
-      let exhaustionMomentum =
-        0;
+      let exhaustionMomentum = 0;
+      let exhaustionExtension = 0;
+      let exhaustionActivity = 0;
+      let exhaustionTrend = 0;
 
-      let exhaustionExtension =
-        0;
-
-      let exhaustionActivity =
-        0;
-
-      let exhaustionTrend =
-        0;
-
-      const exhaustionReasons =
-        [];
+      const exhaustionReasons = [];
 
       if (
         return20 >= 20 &&
         return5 <= 1
       ) {
-        exhaustionMomentum +=
-          15;
+        exhaustionMomentum += 15;
 
         exhaustionReasons.push(
           "중기 급등 후 단기 모멘텀 둔화"
@@ -1978,47 +1795,38 @@ module.exports = async function handler(req, res) {
         return60 >= 35 &&
         return10 < 0
       ) {
-        exhaustionMomentum +=
-          15;
+        exhaustionMomentum += 15;
 
         exhaustionReasons.push(
           "장기 강세 후 최근 약화"
         );
       }
 
-      if (
-        distance20 >= 25
-      ) {
-        exhaustionExtension +=
-          25;
+      if (distance20 >= 25) {
+        exhaustionExtension += 25;
 
         exhaustionReasons.push(
           "MA20 극단적 과이격"
         );
-
       } else if (
         distance20 >= 18
       ) {
-        exhaustionExtension +=
-          18;
+        exhaustionExtension += 18;
 
         exhaustionReasons.push(
           "MA20 높은 과이격"
         );
-
       } else if (
         distance20 >= 12
       ) {
-        exhaustionExtension +=
-          10;
+        exhaustionExtension += 10;
       }
 
       if (
         volumeRatio >= 2 &&
         return5 <= 1
       ) {
-        exhaustionActivity +=
-          12;
+        exhaustionActivity += 12;
 
         exhaustionReasons.push(
           "대량 거래에도 가격 정체"
@@ -2029,26 +1837,19 @@ module.exports = async function handler(req, res) {
         valueRatio >= 2 &&
         return5 < 0
       ) {
-        exhaustionActivity +=
-          13;
+        exhaustionActivity += 13;
 
         exhaustionReasons.push(
           "거래대금 급증 중 가격 약세"
         );
       }
 
-      if (
-        close < ma5
-      ) {
-        exhaustionTrend +=
-          8;
+      if (close < ma5) {
+        exhaustionTrend += 8;
       }
 
-      if (
-        close < ma20
-      ) {
-        exhaustionTrend +=
-          17;
+      if (close < ma20) {
+        exhaustionTrend += 17;
 
         exhaustionReasons.push(
           "MA20 이탈"
@@ -2059,8 +1860,7 @@ module.exports = async function handler(req, res) {
         ma5 < ma20 &&
         return60 > 15
       ) {
-        exhaustionTrend +=
-          10;
+        exhaustionTrend += 10;
       }
 
       let exhaustionScore =
@@ -2091,128 +1891,94 @@ module.exports = async function handler(req, res) {
       const entryReasons = [];
       const entryWarnings = [];
 
-      /* A. TREND 25 */
+      /* TREND 25 */
 
-      if (
-        close > ma20
-      ) {
-        entryTrend +=
-          5;
+      if (close > ma20) {
+        entryTrend += 5;
       }
 
-      if (
-        close > ma60
-      ) {
-        entryTrend +=
-          5;
+      if (close > ma60) {
+        entryTrend += 5;
       }
 
-      if (
-        ma5 > ma20
-      ) {
-        entryTrend +=
-          5;
+      if (ma5 > ma20) {
+        entryTrend += 5;
       }
 
-      if (
-        ma20Rising
-      ) {
-        entryTrend +=
-          5;
+      if (ma20Rising) {
+        entryTrend += 5;
       }
 
-      if (
-        ma60Rising
-      ) {
-        entryTrend +=
-          5;
+      if (ma60Rising) {
+        entryTrend += 5;
       }
 
-      if (
-        entryTrend >= 20
-      ) {
+      if (entryTrend >= 20) {
         entryReasons.push(
           "상승 추세 기반 양호"
         );
       }
 
-      /* B. SETUP 30 */
+      /* SETUP 30 */
 
-      if (
-        freshGoldenCross
-      ) {
-        entrySetup +=
-          12;
+      if (freshGoldenCross) {
+        entrySetup += 12;
 
         entryReasons.push(
           "MA20/MA60 신규 골든크로스"
         );
-
       } else if (
         ma20To60Gap >= -2 &&
         ma20To60Gap < 0
       ) {
-        entrySetup +=
-          9;
+        entrySetup += 9;
 
         entryReasons.push(
           "MA20/MA60 골든크로스 임박"
         );
-
       } else if (
         ma20 >= ma60 &&
         ma20To60Gap <= 4
       ) {
-        entrySetup +=
-          6;
+        entrySetup += 6;
 
         entryReasons.push(
           "MA20/MA60 초기 정배열"
         );
       }
 
-      if (
-        freshAlignment
-      ) {
-        entrySetup +=
-          10;
+      if (freshAlignment) {
+        entrySetup += 10;
 
         entryReasons.push(
           "정배열 신규 형성"
         );
-
       } else if (
         alignment &&
         ma20To60Gap <= 5
       ) {
-        entrySetup +=
-          6;
+        entrySetup += 6;
       }
 
       if (
         distance20 >= 0 &&
         distance20 <= 4
       ) {
-        entrySetup +=
-          8;
+        entrySetup += 8;
 
         entryReasons.push(
           "MA20 이격 부담 낮음"
         );
-
       } else if (
         distance20 > 4 &&
         distance20 <= 8
       ) {
-        entrySetup +=
-          5;
-
+        entrySetup += 5;
       } else if (
         distance20 > 8 &&
         distance20 <= 12
       ) {
-        entrySetup +=
-          2;
+        entrySetup += 2;
       }
 
       entrySetup =
@@ -2222,23 +1988,18 @@ module.exports = async function handler(req, res) {
           30
         );
 
-      /* C. BREAKOUT 20 */
+      /* BREAKOUT 20 */
 
-      if (
-        breakout20
-      ) {
-        entryBreakout +=
-          12;
+      if (breakout20) {
+        entryBreakout += 12;
 
         entryReasons.push(
           "20일 고점 돌파"
         );
-
       } else if (
         nearBreakout
       ) {
-        entryBreakout +=
-          8;
+        entryBreakout += 8;
 
         entryReasons.push(
           "20일 고점 돌파 직전"
@@ -2249,16 +2010,14 @@ module.exports = async function handler(req, res) {
         return5 > 0 &&
         return5 <= 8
       ) {
-        entryBreakout +=
-          4;
+        entryBreakout += 4;
       }
 
       if (
         return10 > 0 &&
         return10 <= 15
       ) {
-        entryBreakout +=
-          4;
+        entryBreakout += 4;
       }
 
       entryBreakout =
@@ -2268,62 +2027,46 @@ module.exports = async function handler(req, res) {
           20
         );
 
-      /* D. ACTIVITY 25 */
+      /* ACTIVITY 25 */
 
-      if (
-        valueRatio >= 2
-      ) {
-        entryActivity +=
-          15;
+      if (valueRatio >= 2) {
+        entryActivity += 15;
 
         entryReasons.push(
           "거래대금 강한 유입"
         );
-
       } else if (
         valueRatio >= 1.5
       ) {
-        entryActivity +=
-          12;
+        entryActivity += 12;
 
         entryReasons.push(
           "거래대금 증가"
         );
-
       } else if (
         valueRatio >= 1.2
       ) {
-        entryActivity +=
-          8;
-
+        entryActivity += 8;
       } else if (
         valueRatio >= 1
       ) {
-        entryActivity +=
-          4;
+        entryActivity += 4;
       }
 
-      if (
-        volumeRatio >= 1.8
-      ) {
-        entryActivity +=
-          10;
+      if (volumeRatio >= 1.8) {
+        entryActivity += 10;
 
         entryReasons.push(
           "거래량 강한 확장"
         );
-
       } else if (
         volumeRatio >= 1.5
       ) {
-        entryActivity +=
-          8;
-
+        entryActivity += 8;
       } else if (
         volumeRatio >= 1.2
       ) {
-        entryActivity +=
-          5;
+        entryActivity += 5;
       }
 
       entryActivity =
@@ -2333,104 +2076,78 @@ module.exports = async function handler(req, res) {
           25
         );
 
-      /* E. PENALTY */
+      /* PENALTY */
 
-      if (
-        return5 >= 20
-      ) {
-        entryPenalty +=
-          20;
+      if (return5 >= 20) {
+        entryPenalty += 20;
 
         entryWarnings.push(
           "5일 급등 - 추격 위험"
         );
-
       } else if (
         return5 >= 15
       ) {
-        entryPenalty +=
-          12;
+        entryPenalty += 12;
 
         entryWarnings.push(
           "최근 단기 급등"
         );
-
       } else if (
         return5 >= 10
       ) {
-        entryPenalty +=
-          5;
+        entryPenalty += 5;
       }
 
-      if (
-        return20 >= 40
-      ) {
-        entryPenalty +=
-          18;
+      if (return20 >= 40) {
+        entryPenalty += 18;
 
         entryWarnings.push(
           "20일 상승폭 과대"
         );
-
       } else if (
         return20 >= 30
       ) {
-        entryPenalty +=
-          10;
+        entryPenalty += 10;
       }
 
-      if (
-        distance20 >= 20
-      ) {
-        entryPenalty +=
-          20;
+      if (distance20 >= 20) {
+        entryPenalty += 20;
 
         entryWarnings.push(
           "MA20 극단적 과이격"
         );
-
       } else if (
         distance20 >= 15
       ) {
-        entryPenalty +=
-          12;
+        entryPenalty += 12;
 
         entryWarnings.push(
           "MA20 과이격"
         );
-
       } else if (
         distance20 >= 12
       ) {
-        entryPenalty +=
-          5;
+        entryPenalty += 5;
       }
 
-      if (
-        exhaustionScore >= 75
-      ) {
-        entryPenalty +=
-          50;
+      if (exhaustionScore >= 75) {
+        entryPenalty += 50;
 
         entryWarnings.push(
           "공세 소멸 위험 매우 높음"
         );
-
       } else if (
         exhaustionScore >= 50
       ) {
-        entryPenalty +=
-          25;
+        entryPenalty += 25;
 
         entryWarnings.push(
           "공세 소멸 위험 상승"
         );
-
       } else if (
         exhaustionScore >= 25
       ) {
-        entryPenalty +=
-          10;
+        entryPenalty += 10;
       }
 
       if (
@@ -2439,8 +2156,7 @@ module.exports = async function handler(req, res) {
         return20 >= 20 &&
         distance20 >= 8
       ) {
-        entryPenalty +=
-          8;
+        entryPenalty += 8;
 
         entryWarnings.push(
           "기존 상승 추세 진행 중 - 초입 매력 감소"
@@ -2475,28 +2191,24 @@ module.exports = async function handler(req, res) {
       ) {
         stage =
           "EXHAUSTING";
-
       } else if (
         close < ma20 &&
         ma5 < ma20
       ) {
         stage =
           "BROKEN";
-
       } else if (
         leaderScore >= 80 &&
         alignment
       ) {
         stage =
           "LEADER";
-
       } else if (
         leaderScore >= 70 &&
         exhaustionScore >= 40
       ) {
         stage =
           "MATURE";
-
       } else if (
         earlyScore >= 70 ||
         freshGoldenCross ||
@@ -2504,7 +2216,6 @@ module.exports = async function handler(req, res) {
       ) {
         stage =
           "EMERGING";
-
       } else if (
         leaderScore >= 60
       ) {
@@ -2524,19 +2235,16 @@ module.exports = async function handler(req, res) {
       ) {
         entryStatus =
           "BLOCKED";
-
       } else if (
         entryScore >= 80
       ) {
         entryStatus =
           "ATTRACTIVE";
-
       } else if (
         entryScore >= 65
       ) {
         entryStatus =
           "WATCH";
-
       } else if (
         entryScore >= 50
       ) {
@@ -2545,8 +2253,7 @@ module.exports = async function handler(req, res) {
       }
 
       return {
-        ok:
-          true,
+        ok: true,
 
         code,
 
@@ -2555,7 +2262,8 @@ module.exports = async function handler(req, res) {
           candidate.name,
 
         market:
-          latest.market,
+          latest.market ||
+          candidate.market,
 
         date:
           latest.date,
@@ -2591,8 +2299,7 @@ module.exports = async function handler(req, res) {
         entryStatus,
 
         blocked:
-          exhaustionScore >=
-          75,
+          exhaustionScore >= 75,
 
         scores: {
           leader:
@@ -2640,56 +2347,65 @@ module.exports = async function handler(req, res) {
 
           ma20To60Gap:
             Number(
-              ma20To60Gap
-                .toFixed(2)
+              ma20To60Gap.toFixed(
+                2
+              )
             ),
 
           distance20:
             Number(
-              distance20
-                .toFixed(2)
+              distance20.toFixed(
+                2
+              )
             ),
 
           distance60:
             Number(
-              distance60
-                .toFixed(2)
+              distance60.toFixed(
+                2
+              )
             ),
 
           return5:
             Number(
-              return5
-                .toFixed(2)
+              return5.toFixed(
+                2
+              )
             ),
 
           return10:
             Number(
-              return10
-                .toFixed(2)
+              return10.toFixed(
+                2
+              )
             ),
 
           return20:
             Number(
-              return20
-                .toFixed(2)
+              return20.toFixed(
+                2
+              )
             ),
 
           return60:
             Number(
-              return60
-                .toFixed(2)
+              return60.toFixed(
+                2
+              )
             ),
 
           volumeRatio:
             Number(
-              volumeRatio
-                .toFixed(2)
+              volumeRatio.toFixed(
+                2
+              )
             ),
 
           tradingValueRatio:
             Number(
-              valueRatio
-                .toFixed(2)
+              valueRatio.toFixed(
+                2
+              )
             ),
 
           breakout20,
@@ -2699,55 +2415,48 @@ module.exports = async function handler(req, res) {
 
         reasons: {
           leader:
-            leaderReasons
-              .slice(
-                0,
-                4
-              ),
+            leaderReasons.slice(
+              0,
+              4
+            ),
 
           early:
-            earlyReasons
-              .slice(
-                0,
-                4
-              ),
+            earlyReasons.slice(
+              0,
+              4
+            ),
 
           entry:
-            entryReasons
-              .slice(
-                0,
-                5
-              ),
+            entryReasons.slice(
+              0,
+              5
+            ),
 
           exhaustion:
-            exhaustionReasons
-              .slice(
-                0,
-                4
-              )
+            exhaustionReasons.slice(
+              0,
+              4
+            )
         },
 
         warnings: {
           leader:
-            leaderWarnings
-              .slice(
-                0,
-                3
-              ),
+            leaderWarnings.slice(
+              0,
+              3
+            ),
 
           early:
-            earlyWarnings
-              .slice(
-                0,
-                3
-              ),
+            earlyWarnings.slice(
+              0,
+              3
+            ),
 
           entry:
-            entryWarnings
-              .slice(
-                0,
-                4
-              )
+            entryWarnings.slice(
+              0,
+              4
+            )
         }
       };
     }
@@ -2756,11 +2465,8 @@ module.exports = async function handler(req, res) {
        4. ANALYZE + AUTO REFILL
     ========================================================= */
 
-    const analyzed =
-      [];
-
-    const skipped =
-      [];
+    const analyzed = [];
+    const skipped = [];
 
     for (
       const candidate of
@@ -2775,9 +2481,7 @@ module.exports = async function handler(req, res) {
 
       const history =
         histories.get(
-          String(
-            candidate.code
-          )
+          candidate.code
         ) || [];
 
       if (
@@ -2786,12 +2490,13 @@ module.exports = async function handler(req, res) {
       ) {
         skipped.push({
           code:
-            String(
-              candidate.code
-            ),
+            candidate.code,
 
           name:
             candidate.name,
+
+          market:
+            candidate.market,
 
           reason:
             `history 부족 (${history.length}일)`
@@ -2806,13 +2511,10 @@ module.exports = async function handler(req, res) {
           history
         );
 
-      if (
-        result.ok
-      ) {
+      if (result.ok) {
         analyzed.push(
           result
         );
-
       } else {
         skipped.push({
           code:
@@ -2834,16 +2536,13 @@ module.exports = async function handler(req, res) {
     const buyable =
       analyzed.filter(
         stock => {
-          if (
-            stock.blocked
-          ) {
+          if (stock.blocked) {
             return false;
           }
 
           if (
             stock.scores
-              .exhaustion >=
-            75
+              .exhaustion >= 75
           ) {
             return false;
           }
@@ -2862,7 +2561,7 @@ module.exports = async function handler(req, res) {
       );
 
     /* =========================================================
-       FINAL RANKINGS
+       RANKINGS
     ========================================================= */
 
     const entryRanking =
@@ -2895,10 +2594,7 @@ module.exports = async function handler(req, res) {
             );
           }
         )
-        .slice(
-          0,
-          15
-        );
+        .slice(0, 15);
 
     const leaderRanking =
       [...analyzed]
@@ -2906,8 +2602,7 @@ module.exports = async function handler(req, res) {
           stock =>
             !stock.blocked &&
             stock.scores
-              .exhaustion <
-              75
+              .exhaustion < 75
         )
         .sort(
           (a, b) => {
@@ -2927,10 +2622,7 @@ module.exports = async function handler(req, res) {
             );
           }
         )
-        .slice(
-          0,
-          15
-        );
+        .slice(0, 15);
 
     const earlyRanking =
       [...buyable]
@@ -2952,45 +2644,59 @@ module.exports = async function handler(req, res) {
             );
           }
         )
-        .slice(
-          0,
-          15
-        );
+        .slice(0, 15);
 
     const exhaustionRanking =
       [...analyzed]
         .filter(
           stock =>
             stock.scores
-              .exhaustion >=
-              25
+              .exhaustion >= 25
         )
         .sort(
           (a, b) =>
-            b.scores
-              .exhaustion -
-            a.scores
-              .exhaustion
+            b.scores.exhaustion -
+            a.scores.exhaustion
         )
-        .slice(
-          0,
-          15
-        );
+        .slice(0, 15);
+
+    /* =========================================================
+       HISTORY DEBUG SUMMARY
+    ========================================================= */
+
+    const historySummary =
+      candidates
+        .slice(0, 15)
+        .map(candidate => ({
+          code:
+            candidate.code,
+
+          name:
+            candidate.name,
+
+          market:
+            candidate.market,
+
+          days:
+            (
+              histories.get(
+                candidate.code
+              ) || []
+            ).length
+        }));
 
     /* =========================================================
        RESPONSE
     ========================================================= */
 
     return res.status(200).json({
-      ok:
-        true,
+      ok: true,
 
       version:
-        "LEADER_CYCLE_RANKINGS_V8",
+        "LEADER_CYCLE_RANKINGS_V9_FAST",
 
       date:
-        scan.date ||
-        null,
+        scan.date || null,
 
       philosophy: {
         leader:
@@ -3012,7 +2718,7 @@ module.exports = async function handler(req, res) {
           startedAt,
 
         architecture:
-          "BULK_KRX_HISTORY_V8_EARLY_STOP",
+          "MARKET_AWARE_BULK_KRX_V9",
 
         stockDetailCalls:
           0,
@@ -3022,17 +2728,28 @@ module.exports = async function handler(req, res) {
 
         krxRequests,
 
+        successfulKrxRequests,
+
+        failedKrxRequests,
+
         historyBatches,
+
+        processedDates,
+
+        dateBatchSize:
+          DATE_BATCH_SIZE,
 
         earlyStop,
 
         earlyStopReason,
 
-        fullHistoryCandidates:
-          historyState.full,
+        needKospi,
 
-        minimumHistoryCandidates:
-          historyState.usable,
+        needKosdaq,
+
+        fullHistoryCandidates,
+
+        minimumHistoryCandidates,
 
         requestedCandidates:
           limit,
@@ -3121,21 +2838,24 @@ module.exports = async function handler(req, res) {
 
       failed: [],
 
-      skipped
+      skipped,
+
+      debug: {
+        historySummary
+      }
     });
 
   } catch (error) {
     console.error(
-      "RANKINGS V8 ERROR",
+      "RANKINGS V9 ERROR",
       error
     );
 
     return res.status(500).json({
-      ok:
-        false,
+      ok: false,
 
       version:
-        "LEADER_CYCLE_RANKINGS_V8",
+        "LEADER_CYCLE_RANKINGS_V9_FAST",
 
       elapsedMs:
         Date.now() -
