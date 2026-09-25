@@ -1,17 +1,20 @@
 /* =========================================================
-   LEADER CYCLE - RANKINGS V12
-   STATIC HISTORY OBJECT FIX
+   LEADER CYCLE - RANKINGS V13
+   60D CHART + MOVING AVERAGE ALIGNMENT
 
-   실제 market-history.json 구조 지원
+   기존 V12 STATIC HISTORY OBJECT FIX 유지
 
-   stocks: {
-     "005930": {
-       code: "005930",
-       name: "...",
-       market: "KOSPI",
-       history: [...]
-     }
-   }
+   추가 기능
+   ---------------------------------------------------------
+   1. 최근 60거래일 차트
+   2. CLOSE / MA5 / MA10 / MA20 / MA40
+   3. 정배열 상태 자동 판정
+      PERFECT
+      BULLISH
+      FORMING
+      MIXED
+      BROKEN
+   4. 프론트 차트용 chart[] 반환
 ========================================================= */
 
 const fs = require("fs");
@@ -71,10 +74,21 @@ module.exports = async function handler(req, res) {
     ===================================================== */
 
     const protocol =
-      req.headers["x-forwarded-proto"] || "https";
+      String(
+        req.headers["x-forwarded-proto"] ||
+        "https"
+      )
+        .split(",")[0]
+        .trim();
 
     const host =
-      req.headers.host;
+      String(
+        req.headers["x-forwarded-host"] ||
+        req.headers.host ||
+        ""
+      )
+        .split(",")[0]
+        .trim();
 
     if (!host) {
       throw new Error(
@@ -122,7 +136,10 @@ module.exports = async function handler(req, res) {
 
         if (!response.ok) {
           throw new Error(
-            `HTTP ${response.status}: ${text.slice(0, 200)}`
+            `HTTP ${response.status}: ${text.slice(
+              0,
+              200
+            )}`
           );
         }
 
@@ -422,20 +439,8 @@ module.exports = async function handler(req, res) {
     }
 
     /* =====================================================
-       PARSER 1 - ACTUAL STATIC HISTORY FORMAT
-
-       실제 저장 구조:
-
-       {
-         stocks: {
-           "005930": {
-             code: "005930",
-             name: "삼성전자",
-             market: "KOSPI",
-             history: [...]
-           }
-         }
-       }
+       PARSER 1
+       ACTUAL STATIC HISTORY FORMAT
     ===================================================== */
 
     function parseStockObject(obj) {
@@ -462,7 +467,14 @@ module.exports = async function handler(req, res) {
         }
 
         /*
-          ★ 실제 현재 구조
+          현재 구조:
+
+          "005930": {
+            code,
+            name,
+            market,
+            history: [...]
+          }
         */
 
         if (
@@ -485,7 +497,7 @@ module.exports = async function handler(req, res) {
         }
 
         /*
-          구형 구조 호환
+          구형 구조:
 
           "005930": [...]
         */
@@ -508,11 +520,6 @@ module.exports = async function handler(req, res) {
       historyJSON?.stocks
     );
 
-    /*
-      혹시 구형 history/data 구조가
-      남아있어도 지원
-    */
-
     parseStockObject(
       historyJSON?.history
     );
@@ -522,7 +529,8 @@ module.exports = async function handler(req, res) {
     );
 
     /* =====================================================
-       PARSER 2 - FLAT ARRAY
+       PARSER 2
+       FLAT ARRAY
     ===================================================== */
 
     function parseFlatArray(arr) {
@@ -573,7 +581,8 @@ module.exports = async function handler(req, res) {
     );
 
     /* =====================================================
-       PARSER 3 - DATE OBJECT
+       PARSER 3
+       DATE OBJECT
     ===================================================== */
 
     function parseDateObject(obj) {
@@ -635,7 +644,8 @@ module.exports = async function handler(req, res) {
     );
 
     /* =====================================================
-       PARSER 4 - DATE BLOCK ARRAY
+       PARSER 4
+       DATE BLOCK ARRAY
     ===================================================== */
 
     function parseDateBlocks(arr) {
@@ -703,8 +713,8 @@ module.exports = async function handler(req, res) {
     /* =====================================================
        SORT + DEDUP
 
-       update-market-history.js는 최신→과거로 저장하지만
-       분석 엔진에서는 과거→최신으로 정렬한다.
+       분석 엔진에서는
+       과거 → 최신 순서
     ===================================================== */
 
     let totalHistoryRows = 0;
@@ -857,6 +867,49 @@ module.exports = async function handler(req, res) {
         .slice(0, 80);
 
     /* =====================================================
+       MOVING AVERAGE HELPER FOR CHART
+    ===================================================== */
+
+    function movingAverageAt(
+      rows,
+      index,
+      period
+    ) {
+      if (
+        index + 1 <
+        period
+      ) {
+        return null;
+      }
+
+      const values =
+        rows
+          .slice(
+            index - period + 1,
+            index + 1
+          )
+          .map(
+            row =>
+              num(row.close)
+          )
+          .filter(
+            value =>
+              value > 0
+          );
+
+      if (
+        values.length !==
+        period
+      ) {
+        return null;
+      }
+
+      return round(
+        average(values)
+      );
+    }
+
+    /* =====================================================
        STOCK ANALYSIS
     ===================================================== */
 
@@ -925,7 +978,7 @@ module.exports = async function handler(req, res) {
         ];
 
       /* ===================================================
-         MOVING AVERAGES
+         CURRENT MOVING AVERAGES
       =================================================== */
 
       const ma5 =
@@ -949,6 +1002,133 @@ module.exports = async function handler(req, res) {
               closes.slice(-40)
             )
           : ma20;
+
+      /* ===================================================
+         60 DAY CHART
+
+         history 최대 105일을 사용해서
+         MA40을 먼저 계산한 뒤
+         마지막 60일만 전달.
+
+         따라서 차트 첫날부터도
+         가능한 경우 MA40 표시 가능.
+      =================================================== */
+
+      const chartSource =
+        history.slice(-105);
+
+      const fullChart =
+        chartSource.map(
+          (row, index) => ({
+            date:
+              row.date,
+
+            close:
+              round(
+                row.close
+              ),
+
+            ma5:
+              movingAverageAt(
+                chartSource,
+                index,
+                5
+              ),
+
+            ma10:
+              movingAverageAt(
+                chartSource,
+                index,
+                10
+              ),
+
+            ma20:
+              movingAverageAt(
+                chartSource,
+                index,
+                20
+              ),
+
+            ma40:
+              movingAverageAt(
+                chartSource,
+                index,
+                40
+              )
+          })
+        );
+
+      const chart =
+        fullChart.slice(-60);
+
+      /* ===================================================
+         ALIGNMENT STATUS
+
+         PERFECT
+         현재가 > MA5 > MA10 > MA20 > MA40
+
+         BULLISH
+         MA5 > MA10 > MA20 > MA40
+
+         FORMING
+         단기선이 장기선 위로 올라오는 중
+
+         BROKEN
+         현재가 MA20 아래 + MA5 < MA10
+
+         MIXED
+         나머지
+      =================================================== */
+
+      let alignment =
+        "MIXED";
+
+      let alignmentLabel =
+        "혼조";
+
+      if (
+        current > ma5 &&
+        ma5 > ma10 &&
+        ma10 > ma20 &&
+        ma20 > ma40
+      ) {
+        alignment =
+          "PERFECT";
+
+        alignmentLabel =
+          "완전 정배열";
+
+      } else if (
+        ma5 > ma10 &&
+        ma10 > ma20 &&
+        ma20 > ma40
+      ) {
+        alignment =
+          "BULLISH";
+
+        alignmentLabel =
+          "상승 정배열";
+
+      } else if (
+        ma5 > ma20 &&
+        ma20 >= ma40
+      ) {
+        alignment =
+          "FORMING";
+
+        alignmentLabel =
+          "정배열 형성중";
+
+      } else if (
+        current < ma20 &&
+        ma5 < ma10
+      ) {
+        alignment =
+          "BROKEN";
+
+        alignmentLabel =
+          "정배열 붕괴";
+      }
 
       /* ===================================================
          20 DAY RANGE
@@ -1075,19 +1255,27 @@ module.exports = async function handler(req, res) {
 
       let trendScore = 0;
 
-      if (current > ma5) {
+      if (
+        current > ma5
+      ) {
         trendScore += 20;
       }
 
-      if (ma5 > ma10) {
+      if (
+        ma5 > ma10
+      ) {
         trendScore += 20;
       }
 
-      if (ma10 > ma20) {
+      if (
+        ma10 > ma20
+      ) {
         trendScore += 25;
       }
 
-      if (ma20 > ma40) {
+      if (
+        ma20 > ma40
+      ) {
         trendScore += 20;
       }
 
@@ -1246,18 +1434,26 @@ module.exports = async function handler(req, res) {
       =================================================== */
 
       const alignmentScore =
-        (current > ma5
-          ? 20
-          : 0) +
-        (ma5 > ma10
-          ? 25
-          : 0) +
-        (ma10 > ma20
-          ? 30
-          : 0) +
-        (ma20 > ma40
-          ? 25
-          : 0);
+        (
+          current > ma5
+            ? 20
+            : 0
+        ) +
+        (
+          ma5 > ma10
+            ? 25
+            : 0
+        ) +
+        (
+          ma10 > ma20
+            ? 30
+            : 0
+        ) +
+        (
+          ma20 > ma40
+            ? 25
+            : 0
+        );
 
       const entryScore =
         clamp(
@@ -1332,6 +1528,14 @@ module.exports = async function handler(req, res) {
         discoveryScore:
           stock.discoveryScore,
 
+        /* -----------------------------------------------
+           정배열 정보
+        ----------------------------------------------- */
+
+        alignment,
+
+        alignmentLabel,
+
         scores: {
           entry:
             round(
@@ -1356,16 +1560,24 @@ module.exports = async function handler(req, res) {
 
         indicators: {
           ma5:
-            round(ma5),
+            round(
+              ma5
+            ),
 
           ma10:
-            round(ma10),
+            round(
+              ma10
+            ),
 
           ma20:
-            round(ma20),
+            round(
+              ma20
+            ),
 
           ma40:
-            round(ma40),
+            round(
+              ma40
+            ),
 
           return5:
             round(
@@ -1401,7 +1613,13 @@ module.exports = async function handler(req, res) {
             round(
               valueRatio
             )
-        }
+        },
+
+        /* -----------------------------------------------
+           프론트 60일 차트
+        ----------------------------------------------- */
+
+        chart
       });
     }
 
@@ -1492,6 +1710,47 @@ module.exports = async function handler(req, res) {
       ).length;
 
     /* =====================================================
+       ALIGNMENT DIAGNOSTIC
+    ===================================================== */
+
+    const alignmentStats = {
+      PERFECT:
+        analyzed.filter(
+          stock =>
+            stock.alignment ===
+            "PERFECT"
+        ).length,
+
+      BULLISH:
+        analyzed.filter(
+          stock =>
+            stock.alignment ===
+            "BULLISH"
+        ).length,
+
+      FORMING:
+        analyzed.filter(
+          stock =>
+            stock.alignment ===
+            "FORMING"
+        ).length,
+
+      MIXED:
+        analyzed.filter(
+          stock =>
+            stock.alignment ===
+            "MIXED"
+        ).length,
+
+      BROKEN:
+        analyzed.filter(
+          stock =>
+            stock.alignment ===
+            "BROKEN"
+        ).length
+    };
+
+    /* =====================================================
        RESPONSE
     ===================================================== */
 
@@ -1502,13 +1761,29 @@ module.exports = async function handler(req, res) {
           true,
 
         version:
-          "LEADER_CYCLE_RANKINGS_V12_STATIC_OBJECT_FIX",
+          "LEADER_CYCLE_RANKINGS_V13_60D_CHART",
 
         date:
           snapshot.date,
 
         architecture:
-          "MARKET_SNAPSHOT + STATIC_HISTORY_OBJECT",
+          "MARKET_SNAPSHOT + STATIC_HISTORY + 60D_MA_CHART",
+
+        chartConfig: {
+          days:
+            60,
+
+          lines: [
+            "close",
+            "ma5",
+            "ma10",
+            "ma20",
+            "ma40"
+          ],
+
+          alignmentOrder:
+            "PRICE > MA5 > MA10 > MA20 > MA40"
+        },
 
         historyMeta: {
           fileVersion:
@@ -1554,6 +1829,8 @@ module.exports = async function handler(req, res) {
 
           maxHistoryDays
         },
+
+        alignmentStats,
 
         performance: {
           elapsedMs:
@@ -1619,7 +1896,7 @@ module.exports = async function handler(req, res) {
 
   } catch (error) {
     console.error(
-      "RANKINGS V12 ERROR",
+      "RANKINGS V13 ERROR",
       error
     );
 
@@ -1630,7 +1907,7 @@ module.exports = async function handler(req, res) {
           false,
 
         version:
-          "LEADER_CYCLE_RANKINGS_V12_STATIC_OBJECT_FIX",
+          "LEADER_CYCLE_RANKINGS_V13_60D_CHART",
 
         error:
           String(
