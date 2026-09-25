@@ -1,14 +1,17 @@
 /* =========================================================
-   LEADER CYCLE - RANKINGS V11
-   ROBUST MARKET HISTORY LOADER
+   LEADER CYCLE - RANKINGS V12
+   STATIC HISTORY OBJECT FIX
 
-   핵심
-   ---------------------------------------------------------
-   1. market-snapshot 호출
-   2. market-history.json 로컬 파일 탐색
-   3. Vercel 경로 차이 자동 대응
-   4. 로컬 실패 시 /data/market-history.json HTTP fallback
-   5. 다양한 history JSON 구조 자동 인식
+   실제 market-history.json 구조 지원
+
+   stocks: {
+     "005930": {
+       code: "005930",
+       name: "...",
+       market: "KOSPI",
+       history: [...]
+     }
+   }
 ========================================================= */
 
 const fs = require("fs");
@@ -70,7 +73,14 @@ module.exports = async function handler(req, res) {
     const protocol =
       req.headers["x-forwarded-proto"] || "https";
 
-    const host = req.headers.host;
+    const host =
+      req.headers.host;
+
+    if (!host) {
+      throw new Error(
+        "host 정보를 확인할 수 없습니다."
+      );
+    }
 
     const baseUrl =
       `${protocol}://${host}`;
@@ -86,37 +96,38 @@ module.exports = async function handler(req, res) {
       const controller =
         new AbortController();
 
-      const timer = setTimeout(
-        () => controller.abort(),
-        timeoutMs
-      );
+      const timer =
+        setTimeout(
+          () => controller.abort(),
+          timeoutMs
+        );
 
       try {
-        const response = await fetch(
-          url,
-          {
-            signal: controller.signal,
+        const response =
+          await fetch(
+            url,
+            {
+              signal:
+                controller.signal,
 
-            headers: {
-              Accept:
-                "application/json"
+              headers: {
+                Accept:
+                  "application/json"
+              }
             }
-          }
-        );
+          );
 
         const text =
           await response.text();
 
         if (!response.ok) {
           throw new Error(
-            `HTTP ${response.status}: ${text.slice(
-              0,
-              200
-            )}`
+            `HTTP ${response.status}: ${text.slice(0, 200)}`
           );
         }
 
         return JSON.parse(text);
+
       } finally {
         clearTimeout(timer);
       }
@@ -137,7 +148,7 @@ module.exports = async function handler(req, res) {
     ) {
       throw new Error(
         snapshot?.error ||
-          "market-snapshot 호출 실패"
+        "market-snapshot 호출 실패"
       );
     }
 
@@ -154,13 +165,6 @@ module.exports = async function handler(req, res) {
 
     /* =====================================================
        MARKET HISTORY LOADER
-
-       Vercel에서는 process.cwd()만 믿으면
-       파일 경로 문제가 생길 수 있으므로
-       여러 후보 경로를 검사한다.
-
-       마지막에는 사이트 자체의
-       /data/market-history.json 을 HTTP로 읽는다.
     ===================================================== */
 
     async function loadMarketHistory() {
@@ -194,9 +198,7 @@ module.exports = async function handler(req, res) {
 
       const checkedPaths = [];
 
-      for (
-        const candidate of candidatePaths
-      ) {
+      for (const candidate of candidatePaths) {
         try {
           checkedPaths.push(candidate);
 
@@ -231,6 +233,7 @@ module.exports = async function handler(req, res) {
 
             checkedPaths
           };
+
         } catch (error) {
           console.error(
             "HISTORY FILE LOAD FAILED",
@@ -239,11 +242,6 @@ module.exports = async function handler(req, res) {
           );
         }
       }
-
-      /*
-        filesystem에서 못 찾으면
-        정적 파일 URL로 fallback
-      */
 
       const historyUrl =
         `${baseUrl}/data/market-history.json`;
@@ -266,14 +264,13 @@ module.exports = async function handler(req, res) {
 
           checkedPaths
         };
+
       } catch (error) {
         throw new Error(
           [
             "market-history.json 로드 실패",
             `HTTP fallback: ${historyUrl}`,
-            `원인: ${
-              error?.message || error
-            }`
+            `원인: ${error?.message || error}`
           ].join(" | ")
         );
       }
@@ -294,7 +291,8 @@ module.exports = async function handler(req, res) {
 
     function cleanStockCode(value) {
       const text =
-        String(value ?? "").trim();
+        String(value ?? "")
+          .trim();
 
       const match =
         text.match(/(\d{6})/);
@@ -319,7 +317,10 @@ module.exports = async function handler(req, res) {
       row,
       fallbackDate = ""
     ) {
-      if (!row) {
+      if (
+        !row ||
+        typeof row !== "object"
+      ) {
         return;
       }
 
@@ -334,71 +335,73 @@ module.exports = async function handler(req, res) {
         date:
           normalizeDate(
             row.date ??
-              row.BAS_DD ??
-              row.basDd ??
-              row.tradeDate ??
-              fallbackDate
+            row.BAS_DD ??
+            row.basDd ??
+            row.tradeDate ??
+            fallbackDate
           ),
 
         open:
           num(
             row.open ??
-              row.TDD_OPNPRC ??
-              row.OPNPRC ??
-              row.OPEN
+            row.TDD_OPNPRC ??
+            row.OPNPRC ??
+            row.OPEN
           ),
 
         high:
           num(
             row.high ??
-              row.TDD_HGPRC ??
-              row.HGPRC ??
-              row.HIGH
+            row.TDD_HGPRC ??
+            row.HGPRC ??
+            row.HIGH
           ),
 
         low:
           num(
             row.low ??
-              row.TDD_LWPRC ??
-              row.LWPRC ??
-              row.LOW
+            row.TDD_LWPRC ??
+            row.LWPRC ??
+            row.LOW
           ),
 
         close:
           num(
             row.close ??
-              row.TDD_CLSPRC ??
-              row.CLSPRC ??
-              row.CLOSE
+            row.TDD_CLSPRC ??
+            row.CLSPRC ??
+            row.CLOSE
           ),
 
         volume:
           num(
             row.volume ??
-              row.ACC_TRDVOL ??
-              row.TRDVOL ??
-              row.VOLUME
+            row.ACC_TRDVOL ??
+            row.TRDVOL ??
+            row.VOLUME
           ),
 
         tradingValue:
           num(
             row.tradingValue ??
-              row.ACC_TRDVAL ??
-              row.TRDVAL ??
-              row.TRADING_VALUE
+            row.ACC_TRDVAL ??
+            row.TRDVAL ??
+            row.TRADING_VALUE
           ),
 
         changeRate:
           num(
             row.changeRate ??
-              row.FLUC_RT ??
-              row.CHG_RT ??
-              row.CHANGE_RATE
+            row.FLUC_RT ??
+            row.CHG_RT ??
+            row.CHANGE_RATE
           )
       };
 
       if (
-        !normalized.date ||
+        !/^\d{8}$/.test(
+          normalized.date
+        ) ||
         normalized.close <= 0
       ) {
         return;
@@ -419,11 +422,23 @@ module.exports = async function handler(req, res) {
     }
 
     /* =====================================================
-       PARSER 1
-       stocks = object keyed by stock code
+       PARSER 1 - ACTUAL STATIC HISTORY FORMAT
+
+       실제 저장 구조:
+
+       {
+         stocks: {
+           "005930": {
+             code: "005930",
+             name: "삼성전자",
+             market: "KOSPI",
+             history: [...]
+           }
+         }
+       }
     ===================================================== */
 
-    function parseCodeObject(obj) {
+    function parseStockObject(obj) {
       if (
         !obj ||
         Array.isArray(obj) ||
@@ -433,14 +448,53 @@ module.exports = async function handler(req, res) {
       }
 
       for (
-        const [code, rows]
+        const [keyCode, stock]
         of Object.entries(obj)
       ) {
+        const code =
+          cleanStockCode(
+            stock?.code ??
+            keyCode
+          );
+
+        if (!code) {
+          continue;
+        }
+
+        /*
+          ★ 실제 현재 구조
+        */
+
         if (
-          /^\d{6}$/.test(code) &&
-          Array.isArray(rows)
+          stock &&
+          typeof stock === "object" &&
+          !Array.isArray(stock) &&
+          Array.isArray(stock.history)
         ) {
-          for (const row of rows) {
+          for (
+            const row
+            of stock.history
+          ) {
+            pushHistory(
+              code,
+              row
+            );
+          }
+
+          continue;
+        }
+
+        /*
+          구형 구조 호환
+
+          "005930": [...]
+        */
+
+        if (Array.isArray(stock)) {
+          for (
+            const row
+            of stock
+          ) {
             pushHistory(
               code,
               row
@@ -450,25 +504,25 @@ module.exports = async function handler(req, res) {
       }
     }
 
-    parseCodeObject(
+    parseStockObject(
       historyJSON?.stocks
     );
 
-    parseCodeObject(
+    /*
+      혹시 구형 history/data 구조가
+      남아있어도 지원
+    */
+
+    parseStockObject(
       historyJSON?.history
     );
 
-    parseCodeObject(
+    parseStockObject(
       historyJSON?.data
     );
 
-    parseCodeObject(
-      historyJSON
-    );
-
     /* =====================================================
-       PARSER 2
-       FLAT ARRAY
+       PARSER 2 - FLAT ARRAY
     ===================================================== */
 
     function parseFlatArray(arr) {
@@ -519,25 +573,7 @@ module.exports = async function handler(req, res) {
     );
 
     /* =====================================================
-       PARSER 3
-       날짜별 구조
-
-       예:
-       {
-         dates: {
-           "20260901": [
-             { code:"005930", ... }
-           ]
-         }
-       }
-
-       또는
-
-       {
-         "20260901": [
-           { code:"005930", ... }
-         ]
-       }
+       PARSER 3 - DATE OBJECT
     ===================================================== */
 
     function parseDateObject(obj) {
@@ -599,18 +635,7 @@ module.exports = async function handler(req, res) {
     );
 
     /* =====================================================
-       PARSER 4
-       날짜별 객체 안에 stocks 배열
-
-       예:
-       {
-         history: [
-           {
-             date:"20260901",
-             stocks:[...]
-           }
-         ]
-       }
+       PARSER 4 - DATE BLOCK ARRAY
     ===================================================== */
 
     function parseDateBlocks(arr) {
@@ -629,8 +654,8 @@ module.exports = async function handler(req, res) {
         const date =
           normalizeDate(
             block.date ??
-              block.BAS_DD ??
-              block.basDd
+            block.BAS_DD ??
+            block.basDd
           );
 
         const rows =
@@ -638,9 +663,7 @@ module.exports = async function handler(req, res) {
           block.rows ??
           block.data;
 
-        if (
-          !Array.isArray(rows)
-        ) {
+        if (!Array.isArray(rows)) {
           continue;
         }
 
@@ -678,7 +701,10 @@ module.exports = async function handler(req, res) {
     );
 
     /* =====================================================
-       SORT + DEDUP HISTORY
+       SORT + DEDUP
+
+       update-market-history.js는 최신→과거로 저장하지만
+       분석 엔진에서는 과거→최신으로 정렬한다.
     ===================================================== */
 
     let totalHistoryRows = 0;
@@ -737,7 +763,9 @@ module.exports = async function handler(req, res) {
 
           return (
             /^\d{6}$/.test(
-              String(stock.code)
+              cleanStockCode(
+                stock.code
+              )
             ) &&
             close >= 1000 &&
             tradingValue >=
@@ -785,7 +813,7 @@ module.exports = async function handler(req, res) {
           const momentumScore =
             clamp(
               50 +
-                changeRate * 5,
+              changeRate * 5,
               0,
               100
             );
@@ -809,6 +837,11 @@ module.exports = async function handler(req, res) {
 
           return {
             ...stock,
+
+            code:
+              cleanStockCode(
+                stock.code
+              ),
 
             discoveryScore:
               round(
@@ -929,16 +962,20 @@ module.exports = async function handler(req, res) {
 
       const high20 =
         prev20.length
-          ? Math.max(...prev20)
+          ? Math.max(
+              ...prev20
+            )
           : current;
 
       const low20 =
         prev20.length
-          ? Math.min(...prev20)
+          ? Math.min(
+              ...prev20
+            )
           : current;
 
       /* ===================================================
-         VOLUME / TRADING VALUE
+         VOLUME / VALUE
       =================================================== */
 
       const avgVolume20 =
@@ -965,7 +1002,7 @@ module.exports = async function handler(req, res) {
         ) ||
         tradingValues[
           tradingValues.length -
-            1
+          1
         ];
 
       const volumeRatio =
@@ -990,7 +1027,7 @@ module.exports = async function handler(req, res) {
               current /
                 closes[
                   closes.length -
-                    6
+                  6
                 ] -
               1
             ) * 100
@@ -1002,7 +1039,7 @@ module.exports = async function handler(req, res) {
               current /
                 closes[
                   closes.length -
-                    21
+                  21
                 ] -
               1
             ) * 100
@@ -1069,55 +1106,55 @@ module.exports = async function handler(req, res) {
         );
 
       /* ===================================================
-         MOMENTUM SCORE
+         MOMENTUM
       =================================================== */
 
       const momentumScore =
         clamp(
           45 +
-            return5 * 2 +
-            return20 * 0.8,
+          return5 * 2 +
+          return20 * 0.8,
           0,
           100
         );
 
       /* ===================================================
-         ENERGY SCORE
+         ENERGY
       =================================================== */
 
       const energyScore =
         clamp(
           30 +
-            Math.min(
-              volumeRatio,
-              5
-            ) * 15 +
-            Math.min(
-              valueRatio,
-              5
-            ) * 10,
+          Math.min(
+            volumeRatio,
+            5
+          ) * 15 +
+          Math.min(
+            valueRatio,
+            5
+          ) * 10,
           0,
           100
         );
 
       /* ===================================================
-         BREAKOUT SCORE
+         BREAKOUT
       =================================================== */
 
       const breakoutScore =
         clamp(
           55 +
-            breakoutPct * 8 +
-            (
-              rangePosition -
-              70
-            ) * 0.5,
+          breakoutPct * 8 +
+          (
+            rangePosition -
+            70
+          ) * 0.5,
           0,
           100
         );
 
       /* ===================================================
-         OVERHEAT SCORE
+         OVERHEAT
       =================================================== */
 
       let overheatScore = 0;
@@ -1132,7 +1169,9 @@ module.exports = async function handler(req, res) {
           ) * 3;
       }
 
-      if (return5 > 15) {
+      if (
+        return5 > 15
+      ) {
         overheatScore +=
           (
             return5 -
@@ -1140,7 +1179,9 @@ module.exports = async function handler(req, res) {
           ) * 2;
       }
 
-      if (return20 > 35) {
+      if (
+        return20 > 35
+      ) {
         overheatScore +=
           (
             return20 -
@@ -1156,39 +1197,35 @@ module.exports = async function handler(req, res) {
         );
 
       /* ===================================================
-         LEADER SCORE
+         LEADER
       =================================================== */
 
       const leaderScore =
         clamp(
           trendScore * 0.35 +
-            momentumScore *
-              0.25 +
-            energyScore * 0.2 +
-            breakoutScore *
-              0.2 -
-            overheatScore *
-              0.15,
+          momentumScore * 0.25 +
+          energyScore * 0.2 +
+          breakoutScore * 0.2 -
+          overheatScore * 0.15,
           0,
           100
         );
 
       /* ===================================================
-         EARLY SCORE
+         EARLY
       =================================================== */
 
       const earlyTrend =
         clamp(
           50 +
-            (
-              ma5 /
-                Math.max(
-                  ma20,
-                  1
-                ) -
+          (
+            ma5 /
+            Math.max(
+              ma20,
               1
-            ) *
-              500,
+            ) -
+            1
+          ) * 500,
           0,
           100
         );
@@ -1196,19 +1233,16 @@ module.exports = async function handler(req, res) {
       const earlyScore =
         clamp(
           earlyTrend * 0.3 +
-            energyScore * 0.3 +
-            breakoutScore *
-              0.2 +
-            momentumScore *
-              0.2 -
-            overheatScore *
-              0.3,
+          energyScore * 0.3 +
+          breakoutScore * 0.2 +
+          momentumScore * 0.2 -
+          overheatScore * 0.3,
           0,
           100
         );
 
       /* ===================================================
-         ENTRY SCORE
+         ENTRY
       =================================================== */
 
       const alignmentScore =
@@ -1227,43 +1261,35 @@ module.exports = async function handler(req, res) {
 
       const entryScore =
         clamp(
-          alignmentScore *
-            0.3 +
-            breakoutScore *
-              0.3 +
-            energyScore *
-              0.25 +
-            momentumScore *
-              0.15 -
-            overheatScore *
-              0.35,
+          alignmentScore * 0.3 +
+          breakoutScore * 0.3 +
+          energyScore * 0.25 +
+          momentumScore * 0.15 -
+          overheatScore * 0.35,
           0,
           100
         );
 
       /* ===================================================
-         EXHAUSTION SCORE
+         EXHAUSTION
       =================================================== */
 
       const exhaustionScore =
         clamp(
           overheatScore * 0.5 +
-            Math.max(
-              0,
-              return20 - 20
-            ) *
-              1.2 +
-            Math.max(
-              0,
-              distanceMa20 -
-                10
-            ) *
-              2 +
-            (
-              volumeRatio > 3
-                ? 15
-                : 0
-            ),
+          Math.max(
+            0,
+            return20 - 20
+          ) * 1.2 +
+          Math.max(
+            0,
+            distanceMa20 - 10
+          ) * 2 +
+          (
+            volumeRatio > 3
+              ? 15
+              : 0
+          ),
           0,
           100
         );
@@ -1308,7 +1334,9 @@ module.exports = async function handler(req, res) {
 
         scores: {
           entry:
-            round(entryScore),
+            round(
+              entryScore
+            ),
 
           leader:
             round(
@@ -1316,7 +1344,9 @@ module.exports = async function handler(req, res) {
             ),
 
           early:
-            round(earlyScore),
+            round(
+              earlyScore
+            ),
 
           exhaustion:
             round(
@@ -1338,10 +1368,14 @@ module.exports = async function handler(req, res) {
             round(ma40),
 
           return5:
-            round(return5),
+            round(
+              return5
+            ),
 
           return20:
-            round(return20),
+            round(
+              return20
+            ),
 
           distanceMa20:
             round(
@@ -1386,7 +1420,10 @@ module.exports = async function handler(req, res) {
             b.scores[type] -
             a.scores[type]
         )
-        .slice(0, limit)
+        .slice(
+          0,
+          limit
+        )
         .map(
           (stock, index) => ({
             rank:
@@ -1398,13 +1435,19 @@ module.exports = async function handler(req, res) {
     }
 
     const entryRanking =
-      makeRanking("entry");
+      makeRanking(
+        "entry"
+      );
 
     const leaderRanking =
-      makeRanking("leader");
+      makeRanking(
+        "leader"
+      );
 
     const earlyRanking =
-      makeRanking("early");
+      makeRanking(
+        "early"
+      );
 
     const exhaustionRanking =
       makeRanking(
@@ -1412,12 +1455,15 @@ module.exports = async function handler(req, res) {
       );
 
     /* =====================================================
-       HISTORY DIAGNOSTIC
+       DIAGNOSTIC
     ===================================================== */
 
     const historyLengths =
       [...historyMap.values()]
-        .map(rows => rows.length);
+        .map(
+          rows =>
+            rows.length
+        );
 
     const maxHistoryDays =
       historyLengths.length
@@ -1439,131 +1485,157 @@ module.exports = async function handler(req, res) {
           length >= 20
       ).length;
 
+    const stocksWith60Days =
+      historyLengths.filter(
+        length =>
+          length >= 60
+      ).length;
+
     /* =====================================================
        RESPONSE
     ===================================================== */
 
-    return res.status(200).json({
-      ok: true,
+    return res
+      .status(200)
+      .json({
+        ok:
+          true,
 
-      version:
-        "LEADER_CYCLE_RANKINGS_V11_ROBUST_HISTORY",
+        version:
+          "LEADER_CYCLE_RANKINGS_V12_STATIC_OBJECT_FIX",
 
-      date:
-        snapshot.date,
+        date:
+          snapshot.date,
 
-      philosophy: {
-        leader:
-          "현재 시장을 실제로 이끄는 종목",
+        architecture:
+          "MARKET_SNAPSHOT + STATIC_HISTORY_OBJECT",
 
-        early:
-          "차기 주도주로 전환될 가능성이 높은 종목",
+        historyMeta: {
+          fileVersion:
+            historyJSON?.version ||
+            null,
 
-        exhaustion:
-          "기존 공세의 상승 에너지가 소진되는 위험",
+          updatedAt:
+            historyJSON?.updatedAt ||
+            null,
 
-        entry:
-          "정배열 형성·돌파·거래에너지가 동시에 나타나는 공세 시작 구간"
-      },
+          latestTradingDate:
+            historyJSON?.latestTradingDate ||
+            null,
 
-      architecture:
-        "MARKET_SNAPSHOT + ROBUST_STATIC_MARKET_HISTORY",
+          tradingDaysCollected:
+            num(
+              historyJSON?.tradingDaysCollected
+            ),
 
-      historyDiagnostic: {
-        source:
-          historyLoad.source,
+          declaredStockCount:
+            num(
+              historyJSON?.stockCount
+            )
+        },
 
-        location:
-          historyLoad.location,
+        historyDiagnostic: {
+          source:
+            historyLoad.source,
 
-        historyFileStocks:
-          historyMap.size,
+          location:
+            historyLoad.location,
 
-        totalHistoryRows,
+          historyFileStocks:
+            historyMap.size,
 
-        stocksWith20Days,
+          totalHistoryRows,
 
-        minHistoryDays,
+          stocksWith20Days,
 
-        maxHistoryDays
-      },
+          stocksWith60Days,
 
-      performance: {
-        elapsedMs:
-          Date.now() -
-          startedAt,
+          minHistoryDays,
 
-        krxHistoryRequests:
-          0,
+          maxHistoryDays
+        },
 
-        historyFileStocks:
-          historyMap.size
-      },
+        performance: {
+          elapsedMs:
+            Date.now() -
+            startedAt,
 
-      stats: {
-        marketStocks:
-          marketStocks.length,
+          krxHistoryRequests:
+            0,
 
-        investableStocks:
-          investableStocks.length,
+          historyFileStocks:
+            historyMap.size
+        },
 
-        discoveryCandidates:
-          discoveryCandidates.length,
+        stats: {
+          marketStocks:
+            marketStocks.length,
 
-        analyzed:
-          analyzed.length,
+          investableStocks:
+            investableStocks.length,
+
+          discoveryCandidates:
+            discoveryCandidates.length,
+
+          analyzed:
+            analyzed.length,
+
+          skipped:
+            skipped.length
+        },
+
+        topPicks: {
+          entry:
+            entryRanking[0] ||
+            null,
+
+          leader:
+            leaderRanking[0] ||
+            null,
+
+          early:
+            earlyRanking[0] ||
+            null,
+
+          exhaustion:
+            exhaustionRanking[0] ||
+            null
+        },
+
+        entryRanking,
+
+        leaderRanking,
+
+        earlyRanking,
+
+        exhaustionRanking,
 
         skipped:
-          skipped.length
-      },
+          skipped.slice(
+            0,
+            30
+          )
+      });
 
-      topPicks: {
-        entry:
-          entryRanking[0] ||
-          null,
-
-        leader:
-          leaderRanking[0] ||
-          null,
-
-        early:
-          earlyRanking[0] ||
-          null,
-
-        exhaustion:
-          exhaustionRanking[0] ||
-          null
-      },
-
-      entryRanking,
-
-      leaderRanking,
-
-      earlyRanking,
-
-      exhaustionRanking,
-
-      skipped:
-        skipped.slice(0, 30)
-    });
   } catch (error) {
     console.error(
-      "RANKINGS V11 ERROR",
+      "RANKINGS V12 ERROR",
       error
     );
 
     return res
       .status(500)
       .json({
-        ok: false,
+        ok:
+          false,
 
         version:
-          "LEADER_CYCLE_RANKINGS_V11_ROBUST_HISTORY",
+          "LEADER_CYCLE_RANKINGS_V12_STATIC_OBJECT_FIX",
 
         error:
           String(
             error?.message ||
-              error
+            error
           ),
 
         elapsedMs:
