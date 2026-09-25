@@ -1,22 +1,34 @@
 /* =========================================================
-   LEADER CYCLE - SECTOR SCANNER V3
+   LEADER CYCLE - SECTOR SCANNER V4
+   SECTOR CYCLE ENGINE
 
-   HAN + EARLY + SECTOR EXHAUSTION
-
-   목적
+   FLOW
    ---------------------------------------------------------
-   1. market-snapshot 전체 종목 수신
-   2. sector-map 분류
-   3. 종목수 Coverage + 거래대금 Coverage 계산
-   4. 섹터 Breadth / Momentum / Liquidity 계산
-   5. HAN / EARLY / EXHAUSTION 점수 계산
-   6. LEADER / EMERGING / WATCH / MATURE / WEAK 분류
-   7. 현재 주도섹터 + 차기 주도섹터 + 공세종료 위험 반환
+   MARKET SNAPSHOT
+      ↓
+   SECTOR MAP
+      ↓
+   HAN / EARLY / EXHAUST
+      ↓
+   7-STAGE SECTOR CYCLE
+      ↓
+   CURRENT / NEXT / EXHAUSTION
+
+   CYCLE
+   ---------------------------------------------------------
+   🌱 초기 포착
+   🚀 주도 진입
+   🔥 주도 확산
+   👑 주도 정점
+   ⚠️ 소진 경고
+   🔻 주도 이탈
+   ⚪ 관망
 
    IMPORTANT
    ---------------------------------------------------------
-   market-snapshot.js 건드리지 않음
-   sector-map.js 건드리지 않음
+   market-snapshot.js 수정 없음
+   sector-map.js 수정 없음
+   rankings.js 수정 없음
 ========================================================= */
 
 const {
@@ -57,18 +69,29 @@ module.exports = async function handler(req, res) {
     }
 
 
-    function clamp(value, min = 0, max = 100) {
+    function clamp(
+      value,
+      min = 0,
+      max = 100
+    ) {
 
       return Math.max(
         min,
-        Math.min(max, value)
+        Math.min(
+          max,
+          num(value)
+        )
       );
     }
 
 
-    function round(value, digits = 2) {
+    function round(
+      value,
+      digits = 2
+    ) {
 
-      const n = num(value);
+      const n =
+        num(value);
 
       return Number(
         n.toFixed(digits)
@@ -88,7 +111,9 @@ module.exports = async function handler(req, res) {
       const valid =
         values
           .map(num)
-          .filter(Number.isFinite);
+          .filter(
+            Number.isFinite
+          );
 
       if (!valid.length) {
         return 0;
@@ -125,15 +150,20 @@ module.exports = async function handler(req, res) {
 
     const protocol =
       String(
-        req.headers["x-forwarded-proto"] ||
+        req.headers[
+          "x-forwarded-proto"
+        ] ||
         "https"
       )
         .split(",")[0]
         .trim();
 
+
     const host =
       String(
-        req.headers["x-forwarded-host"] ||
+        req.headers[
+          "x-forwarded-host"
+        ] ||
         req.headers.host ||
         ""
       )
@@ -143,13 +173,18 @@ module.exports = async function handler(req, res) {
 
     if (!host) {
 
-      return res.status(500).json({
-        ok: false,
-        version:
-          "SECTOR_SCAN_V3_HAN_EARLY_EXHAUSTION",
-        error:
-          "host 정보를 확인할 수 없습니다."
-      });
+      return res
+        .status(500)
+        .json({
+
+          ok: false,
+
+          version:
+            "SECTOR_SCAN_V4_CYCLE",
+
+          error:
+            "host 정보를 확인할 수 없습니다."
+        });
     }
 
 
@@ -173,7 +208,11 @@ module.exports = async function handler(req, res) {
       `${baseUrl}/api/market-snapshot`;
 
 
-    if (/^\d{8}$/.test(requestedDate)) {
+    if (
+      /^\d{8}$/.test(
+        requestedDate
+      )
+    ) {
 
       snapshotUrl +=
         `?date=${encodeURIComponent(
@@ -203,22 +242,24 @@ module.exports = async function handler(req, res) {
 
     } catch (error) {
 
-      return res.status(502).json({
+      return res
+        .status(502)
+        .json({
 
-        ok: false,
+          ok: false,
 
-        version:
-          "SECTOR_SCAN_V3_HAN_EARLY_EXHAUSTION",
+          version:
+            "SECTOR_SCAN_V4_CYCLE",
 
-        error:
-          "market-snapshot 호출 실패",
+          error:
+            "market-snapshot 호출 실패",
 
-        detail:
-          String(
-            error?.message ||
-            error
-          )
-      });
+          detail:
+            String(
+              error?.message ||
+              error
+            )
+        });
     }
 
 
@@ -231,19 +272,21 @@ module.exports = async function handler(req, res) {
 
     } catch {
 
-      return res.status(502).json({
+      return res
+        .status(502)
+        .json({
 
-        ok: false,
+          ok: false,
 
-        version:
-          "SECTOR_SCAN_V3_HAN_EARLY_EXHAUSTION",
+          version:
+            "SECTOR_SCAN_V4_CYCLE",
 
-        error:
-          "market-snapshot JSON 파싱 실패",
+          error:
+            "market-snapshot JSON 파싱 실패",
 
-        snapshotHttpStatus:
-          response.status
-      });
+          snapshotHttpStatus:
+            response.status
+        });
     }
 
 
@@ -253,22 +296,24 @@ module.exports = async function handler(req, res) {
       snapshot.ok !== true
     ) {
 
-      return res.status(502).json({
+      return res
+        .status(502)
+        .json({
 
-        ok: false,
+          ok: false,
 
-        version:
-          "SECTOR_SCAN_V3_HAN_EARLY_EXHAUSTION",
+          version:
+            "SECTOR_SCAN_V4_CYCLE",
 
-        error:
-          "market-snapshot 응답 실패",
+          error:
+            "market-snapshot 응답 실패",
 
-        snapshotHttpStatus:
-          response.status,
+          snapshotHttpStatus:
+            response.status,
 
-        snapshot:
-          snapshot || null
-      });
+          snapshot:
+            snapshot || null
+        });
     }
 
 
@@ -277,7 +322,9 @@ module.exports = async function handler(req, res) {
     ===================================================== */
 
     const rawStocks =
-      Array.isArray(snapshot.stocks)
+      Array.isArray(
+        snapshot.stocks
+      )
         ? snapshot.stocks
         : [];
 
@@ -369,19 +416,21 @@ module.exports = async function handler(req, res) {
 
     if (!stocks.length) {
 
-      return res.status(502).json({
+      return res
+        .status(502)
+        .json({
 
-        ok: false,
+          ok: false,
 
-        version:
-          "SECTOR_SCAN_V3_HAN_EARLY_EXHAUSTION",
+          version:
+            "SECTOR_SCAN_V4_CYCLE",
 
-        error:
-          "사용 가능한 시장 종목이 없습니다.",
+          error:
+            "사용 가능한 시장 종목이 없습니다.",
 
-        snapshotStocks:
-          rawStocks.length
-      });
+          snapshotStocks:
+            rawStocks.length
+        });
     }
 
 
@@ -404,19 +453,21 @@ module.exports = async function handler(req, res) {
     const knownStocks =
       classifiedStocks.filter(
         stock =>
-          stock.sectorClassified === true
+          stock.sectorClassified ===
+          true
       );
 
 
     const unknownStocks =
       classifiedStocks.filter(
         stock =>
-          stock.sectorClassified !== true
+          stock.sectorClassified !==
+          true
       );
 
 
     /* =====================================================
-       MARKET TOTALS
+       MARKET TOTAL
     ===================================================== */
 
     const marketTradingValue =
@@ -465,7 +516,7 @@ module.exports = async function handler(req, res) {
 
 
     /* =====================================================
-       GROUP CLASSIFIED STOCKS
+       GROUP STOCKS
     ===================================================== */
 
     const groupMap = {};
@@ -500,14 +551,16 @@ module.exports = async function handler(req, res) {
       }
 
 
-      groupMap[sectorId]
-        .stocks
-        .push(stock);
+      groupMap[
+        sectorId
+      ].stocks.push(
+        stock
+      );
     }
 
 
     /* =====================================================
-       SECTOR RAW DATA
+       BUILD SECTORS
     ===================================================== */
 
     const sectors = [];
@@ -709,31 +762,16 @@ module.exports = async function handler(req, res) {
 
 
     /* =====================================================
-       SCORE ENGINE
-
-       HAN
-       -----------------------------------------------------
-       현재 주도력
-
-       EARLY
-       -----------------------------------------------------
-       초기 확산 가능성
-
-       EXHAUSTION
-       -----------------------------------------------------
-       공세 종료 / 분배 위험
-
-       V1은 당일 snapshot 기반.
-       향후 history 기반으로 V2 고도화 가능.
+       SCORE + CYCLE ENGINE
     ===================================================== */
 
     for (
       const sector of sectors
     ) {
 
-      /* ---------------------------------------------------
+      /* ===================================================
          BREADTH
-      --------------------------------------------------- */
+      =================================================== */
 
       const breadthScore =
         clamp(
@@ -741,9 +779,9 @@ module.exports = async function handler(req, res) {
         );
 
 
-      /* ---------------------------------------------------
+      /* ===================================================
          MOMENTUM
-      --------------------------------------------------- */
+      =================================================== */
 
       const momentumScore =
         clamp(
@@ -756,9 +794,11 @@ module.exports = async function handler(req, res) {
         );
 
 
-      /* ---------------------------------------------------
+      /* ===================================================
          LIQUIDITY
-      --------------------------------------------------- */
+
+         시장 거래대금 10% = 100점
+      =================================================== */
 
       const liquidityScore =
         clamp(
@@ -770,9 +810,10 @@ module.exports = async function handler(req, res) {
         );
 
 
-      /* ---------------------------------------------------
-         HAN SCORE
-      --------------------------------------------------- */
+      /* ===================================================
+         HAN
+         현재 주도력
+      =================================================== */
 
       const hanScore =
         clamp(
@@ -792,9 +833,10 @@ module.exports = async function handler(req, res) {
         );
 
 
-      /* ---------------------------------------------------
-         EARLY SCORE
-      --------------------------------------------------- */
+      /* ===================================================
+         EARLY
+         선행 확산 신호
+      =================================================== */
 
       const earlyScore =
         clamp(
@@ -815,107 +857,78 @@ module.exports = async function handler(req, res) {
 
 
       /* ===================================================
-         EXHAUSTION ENGINE
+         EXHAUSTION
 
-         핵심 아이디어
+         중요:
+         단순히 HAN이 높다고 소진이 아니다.
 
-         단순히 약한 섹터가 아니라
+         1. 거래대금 집중
+         2. breadth 둔화
+         3. 평균 상승률 과열
+         4. 소수 종목 집중
 
-         "거래대금/주도력이 있었는데
-          내부 확산과 모멘텀이 약해지는 섹터"
-
-         를 잡는다.
+         을 조합한다.
       =================================================== */
-
-
-      /* ---------------------------------------------------
-         BREADTH WEAKNESS
-
-         상승 종목 비율이 낮을수록 증가
-      --------------------------------------------------- */
 
       const breadthWeakness =
         clamp(
-          100 -
-          sector.advanceRatio
-        );
-
-
-      /* ---------------------------------------------------
-         MOMENTUM WEAKNESS
-
-         현재 가격 모멘텀이 낮을수록 증가
-      --------------------------------------------------- */
-
-      const momentumWeakness =
-        clamp(
-          100 -
-          momentumScore
-        );
-
-
-      /* ---------------------------------------------------
-         DISTRIBUTION
-
-         거래대금은 몰려있는데
-         상승 확산이 약한 경우
-
-         분배 가능성을 높게 본다.
-      --------------------------------------------------- */
-
-      const distributionScore =
-        clamp(
-
-          liquidityScore *
-
           (
-            breadthWeakness /
-            100
-          )
+            60 -
+            sector.advanceRatio
+          ) * 2
         );
 
 
-      /* ---------------------------------------------------
-         EXHAUSTION SCORE
+      const momentumHeat =
+        clamp(
+          Math.max(
+            0,
+            sector.averageChangeRate -
+            1
+          ) * 20
+        );
 
-         HAN              20%
-         LIQUIDITY        20%
-         BREADTH WEAK     25%
-         MOMENTUM WEAK    20%
-         DISTRIBUTION     15%
-      --------------------------------------------------- */
+
+      const liquidityHeat =
+        clamp(
+          sector.tradingShare *
+          2
+        );
+
+
+      const concentrationScore =
+        sector.stockCount > 0
+          ? clamp(
+              (
+                5 /
+                sector.stockCount
+              ) * 100
+            )
+          : 0;
+
 
       const exhaustionScore =
         clamp(
 
-          hanScore *
-          0.20
-
-          +
-
-          liquidityScore *
-          0.20
-
-          +
-
           breadthWeakness *
-          0.25
+          0.35
 
           +
 
-          momentumWeakness *
+          momentumHeat *
           0.20
 
           +
 
-          distributionScore *
+          liquidityHeat *
+          0.30
+
+          +
+
+          concentrationScore *
           0.15
         );
 
-
-      /* ===================================================
-         SCORES
-      =================================================== */
 
       sector.scores = {
 
@@ -947,91 +960,325 @@ module.exports = async function handler(req, res) {
         liquidity:
           Math.round(
             liquidityScore
-          ),
-
-        breadthWeakness:
-          Math.round(
-            breadthWeakness
-          ),
-
-        momentumWeakness:
-          Math.round(
-            momentumWeakness
-          ),
-
-        distribution:
-          Math.round(
-            distributionScore
           )
       };
 
 
       /* ===================================================
-         STAGE ENGINE
+         7-STAGE CYCLE ENGINE
+
+         stageCode는 프론트/UI 안정성을 위해
+         영문 고정값.
+
+         stageLabel은 사람이 보는 문구.
       =================================================== */
 
-      let stage =
+      let stageCode =
         "WATCH";
 
+      let stageLabel =
+        "⚪ 관망";
+
+      let stageDescription =
+        "뚜렷한 주도 신호가 아직 없습니다.";
+
+      let cycleProgress =
+        10;
+
+
+      /* ---------------------------------------------------
+         1. LEADERSHIP EXIT
+
+         이미 힘이 꺾인 상태.
+      --------------------------------------------------- */
 
       if (
-        hanScore >= 75 &&
-        sector.advanceRatio >= 55
+        exhaustionScore >= 70 &&
+        (
+          sector.advanceRatio < 40 ||
+          sector.averageChangeRate < 0
+        )
       ) {
 
-        stage =
-          "LEADER";
+        stageCode =
+          "EXIT";
 
-      } else if (
-        earlyScore >= 65 &&
-        hanScore < 75
-      ) {
+        stageLabel =
+          "🔻 주도 이탈";
 
-        stage =
-          "EMERGING";
+        stageDescription =
+          "주도력이 약화되고 상승 확산이 무너지는 구간입니다.";
 
-      } else if (
-        hanScore >= 55
-      ) {
-
-        stage =
-          "STRONG";
-
-      } else if (
-        sector.averageChangeRate < 0 &&
-        sector.advanceRatio < 40
-      ) {
-
-        stage =
-          "WEAK";
+        cycleProgress =
+          100;
       }
 
 
       /* ---------------------------------------------------
-         MATURE
+         2. EXHAUSTION WARNING
 
-         거래대금은 큰데
-         확산이 약해지는 상태
+         아직 상승하고 있을 수도 있지만
+         위험도가 높은 상태.
       --------------------------------------------------- */
 
-      if (
-        sector.tradingShare >= 5 &&
-        sector.advanceRatio < 45 &&
+      else if (
+        exhaustionScore >= 65 &&
         hanScore >= 50
       ) {
 
-        stage =
-          "MATURE";
+        stageCode =
+          "EXHAUSTION";
+
+        stageLabel =
+          "⚠️ 소진 경고";
+
+        stageDescription =
+          "주도력은 남아 있지만 과열·집중 위험이 높아지고 있습니다.";
+
+        cycleProgress =
+          88;
+      }
+
+
+      /* ---------------------------------------------------
+         3. LEADERSHIP PEAK
+      --------------------------------------------------- */
+
+      else if (
+        hanScore >= 65 &&
+        exhaustionScore >= 45
+      ) {
+
+        stageCode =
+          "PEAK";
+
+        stageLabel =
+          "👑 주도 정점";
+
+        stageDescription =
+          "강한 주도 구간이지만 소진 신호가 점차 증가하고 있습니다.";
+
+        cycleProgress =
+          74;
+      }
+
+
+      /* ---------------------------------------------------
+         4. LEADERSHIP EXPANSION
+      --------------------------------------------------- */
+
+      else if (
+        hanScore >= 65 &&
+        sector.advanceRatio >= 55
+      ) {
+
+        stageCode =
+          "EXPANSION";
+
+        stageLabel =
+          "🔥 주도 확산";
+
+        stageDescription =
+          "거래대금과 상승 종목이 함께 확산되는 핵심 주도 구간입니다.";
+
+        cycleProgress =
+          58;
+      }
+
+
+      /* ---------------------------------------------------
+         5. LEADERSHIP ENTRY
+      --------------------------------------------------- */
+
+      else if (
+        hanScore >= 55 &&
+        earlyScore >= 55
+      ) {
+
+        stageCode =
+          "LEADERSHIP_ENTRY";
+
+        stageLabel =
+          "🚀 주도 진입";
+
+        stageDescription =
+          "선행 신호가 실제 주도력으로 연결되기 시작하고 있습니다.";
+
+        cycleProgress =
+          42;
+      }
+
+
+      /* ---------------------------------------------------
+         6. EARLY DETECTION
+      --------------------------------------------------- */
+
+      else if (
+        earlyScore >= 50 &&
+        sector.advanceRatio >= 45
+      ) {
+
+        stageCode =
+          "EARLY";
+
+        stageLabel =
+          "🌱 초기 포착";
+
+        stageDescription =
+          "상승 확산과 모멘텀이 생기기 시작한 차기 주도 후보입니다.";
+
+        cycleProgress =
+          25;
+      }
+
+
+      /* ---------------------------------------------------
+         7. WATCH
+      --------------------------------------------------- */
+
+      else {
+
+        stageCode =
+          "WATCH";
+
+        stageLabel =
+          "⚪ 관망";
+
+        stageDescription =
+          "아직 주도 사이클 진입 조건이 충분하지 않습니다.";
+
+        cycleProgress =
+          10;
+      }
+
+
+      /* ===================================================
+         CYCLE STRENGTH
+
+         0~100
+         현재 섹터 자체의 매력도.
+
+         cycleProgress와 다른 값이다.
+
+         progress = 사이클 어디쯤인가
+         strength = 지금 얼마나 강한가
+      =================================================== */
+
+      const cycleStrength =
+        clamp(
+
+          hanScore *
+          0.45
+
+          +
+
+          earlyScore *
+          0.30
+
+          +
+
+          breadthScore *
+          0.15
+
+          +
+
+          momentumScore *
+          0.10
+
+          -
+
+          exhaustionScore *
+          0.20
+        );
+
+
+      /* ===================================================
+         ACTION LABEL
+      =================================================== */
+
+      let action =
+        "관망";
+
+
+      if (
+        stageCode ===
+        "EARLY"
+      ) {
+
+        action =
+          "선행 관찰";
+
+      } else if (
+        stageCode ===
+        "LEADERSHIP_ENTRY"
+      ) {
+
+        action =
+          "적극 관찰";
+
+      } else if (
+        stageCode ===
+        "EXPANSION"
+      ) {
+
+        action =
+          "핵심 주도";
+
+      } else if (
+        stageCode ===
+        "PEAK"
+      ) {
+
+        action =
+          "추격 주의";
+
+      } else if (
+        stageCode ===
+        "EXHAUSTION"
+      ) {
+
+        action =
+          "신규 진입 주의";
+
+      } else if (
+        stageCode ===
+        "EXIT"
+      ) {
+
+        action =
+          "회피";
       }
 
 
       sector.stage =
-        stage;
+        stageCode;
+
+      sector.stageCode =
+        stageCode;
+
+      sector.stageLabel =
+        stageLabel;
+
+      sector.stageDescription =
+        stageDescription;
+
+      sector.action =
+        action;
+
+      sector.cycleProgress =
+        Math.round(
+          cycleProgress
+        );
+
+      sector.cycleStrength =
+        Math.round(
+          cycleStrength
+        );
     }
 
 
     /* =====================================================
-       SORT BY HAN
+       MAIN SORT
     ===================================================== */
 
     sectors.sort(
@@ -1058,16 +1305,42 @@ module.exports = async function handler(req, res) {
 
     /* =====================================================
        CURRENT LEADERS
+
+       주도 진입 ~ 정점
+       소진 경고는 별도 분리
     ===================================================== */
 
     const currentLeaders =
       sectors
         .filter(
           sector =>
-            sector.stage ===
-              "LEADER" ||
-            sector.stage ===
-              "STRONG"
+            [
+              "LEADERSHIP_ENTRY",
+              "EXPANSION",
+              "PEAK"
+            ].includes(
+              sector.stageCode
+            )
+        )
+        .sort(
+          (a, b) => {
+
+            if (
+              b.cycleStrength !==
+              a.cycleStrength
+            ) {
+
+              return (
+                b.cycleStrength -
+                a.cycleStrength
+              );
+            }
+
+            return (
+              b.scores.han -
+              a.scores.han
+            );
+          }
         )
         .slice(
           0,
@@ -1077,19 +1350,41 @@ module.exports = async function handler(req, res) {
 
     /* =====================================================
        NEXT LEADER RADAR
+
+       아직 주도 정점/소진에 간 섹터 제외.
     ===================================================== */
 
     const nextLeaderRadar =
-      [...sectors]
+      sectors
         .filter(
           sector =>
-            sector.stage !==
-            "LEADER"
+            [
+              "EARLY",
+              "LEADERSHIP_ENTRY",
+              "WATCH"
+            ].includes(
+              sector.stageCode
+            )
         )
         .sort(
-          (a, b) =>
-            b.scores.early -
-            a.scores.early
+          (a, b) => {
+
+            if (
+              b.scores.early !==
+              a.scores.early
+            ) {
+
+              return (
+                b.scores.early -
+                a.scores.early
+              );
+            }
+
+            return (
+              b.cycleStrength -
+              a.cycleStrength
+            );
+          }
         )
         .slice(
           0,
@@ -1098,56 +1393,180 @@ module.exports = async function handler(req, res) {
 
 
     /* =====================================================
-       EXHAUSTION SECTORS
+       EXHAUSTION WATCH
 
-       공세 종료 위험 섹터
+       이번 버전 핵심.
 
-       중요한 점:
-       그냥 하락하는 약한 섹터를 뽑지 않는다.
-
-       1. 일정 수준의 HAN 또는 Liquidity 존재
-       2. Breadth / Momentum 약화
-       3. 최소 거래대금 비중 존재
+       단순 EXHAUSTION 점수순이 아니라
+       실제 후반 사이클만 보여준다.
     ===================================================== */
 
-    const exhaustionSectors =
-      [...sectors]
-
+    const exhaustionRadar =
+      sectors
         .filter(
-          sector => {
+          sector =>
+            [
+              "PEAK",
+              "EXHAUSTION",
+              "EXIT"
+            ].includes(
+              sector.stageCode
+            )
+        )
+        .sort(
+          (a, b) => {
 
-            const hadStrength =
-              sector.scores.han >= 40 ||
-              sector.scores.liquidity >= 35;
+            if (
+              b.scores.exhaustion !==
+              a.scores.exhaustion
+            ) {
 
-
-            const weakening =
-              sector.advanceRatio < 55 ||
-              sector.averageChangeRate < 0.5;
-
-
-            const meaningfulLiquidity =
-              sector.tradingShare >= 0.5;
-
+              return (
+                b.scores.exhaustion -
+                a.scores.exhaustion
+              );
+            }
 
             return (
-              hadStrength &&
-              weakening &&
-              meaningfulLiquidity
+              b.scores.han -
+              a.scores.han
             );
           }
         )
-
-        .sort(
-          (a, b) =>
-            b.scores.exhaustion -
-            a.scores.exhaustion
-        )
-
         .slice(
           0,
           10
         );
+
+
+    /* =====================================================
+       COUNTS
+    ===================================================== */
+
+    const cycleCounts = {
+
+      early:
+        sectors.filter(
+          sector =>
+            sector.stageCode ===
+            "EARLY"
+        ).length,
+
+      leadershipEntry:
+        sectors.filter(
+          sector =>
+            sector.stageCode ===
+            "LEADERSHIP_ENTRY"
+        ).length,
+
+      expansion:
+        sectors.filter(
+          sector =>
+            sector.stageCode ===
+            "EXPANSION"
+        ).length,
+
+      peak:
+        sectors.filter(
+          sector =>
+            sector.stageCode ===
+            "PEAK"
+        ).length,
+
+      exhaustion:
+        sectors.filter(
+          sector =>
+            sector.stageCode ===
+            "EXHAUSTION"
+        ).length,
+
+      exit:
+        sectors.filter(
+          sector =>
+            sector.stageCode ===
+            "EXIT"
+        ).length,
+
+      watch:
+        sectors.filter(
+          sector =>
+            sector.stageCode ===
+            "WATCH"
+        ).length
+    };
+
+
+    /* =====================================================
+       RESPONSE MAPPER
+    ===================================================== */
+
+    function publicSector(
+      sector
+    ) {
+
+      return {
+
+        id:
+          sector.id,
+
+        name:
+          sector.name,
+
+        stage:
+          sector.stage,
+
+        stageCode:
+          sector.stageCode,
+
+        stageLabel:
+          sector.stageLabel,
+
+        stageDescription:
+          sector.stageDescription,
+
+        action:
+          sector.action,
+
+        cycleProgress:
+          sector.cycleProgress,
+
+        cycleStrength:
+          sector.cycleStrength,
+
+        han:
+          sector.scores.han,
+
+        early:
+          sector.scores.early,
+
+        exhaustion:
+          sector.scores.exhaustion,
+
+        stockCount:
+          sector.stockCount,
+
+        rising:
+          sector.rising,
+
+        falling:
+          sector.falling,
+
+        advanceRatio:
+          sector.advanceRatio,
+
+        averageChangeRate:
+          sector.averageChangeRate,
+
+        tradingValue:
+          sector.tradingValue,
+
+        tradingShare:
+          sector.tradingShare,
+
+        leaders:
+          sector.leaders
+      };
+    }
 
 
     /* =====================================================
@@ -1186,332 +1605,261 @@ module.exports = async function handler(req, res) {
        RESPONSE
     ===================================================== */
 
-    return res.status(200).json({
+    return res
+      .status(200)
+      .json({
 
-      ok: true,
+        ok: true,
 
-      version:
-        "SECTOR_SCAN_V3_HAN_EARLY_EXHAUSTION",
+        version:
+          "SECTOR_SCAN_V4_7_STAGE_CYCLE",
 
-      date:
-        snapshot.date ||
-        null,
+        date:
+          snapshot.date ||
+          null,
 
-      requestedDate:
-        snapshot.requestedDate ||
-        requestedDate ||
-        null,
+        requestedDate:
+          snapshot.requestedDate ||
+          requestedDate ||
+          null,
 
-      fallbackUsed:
-        Boolean(
-          snapshot.fallbackUsed
-        ),
-
-
-      productionReady,
-
-
-      coverage: {
-
-        stockCoverage:
-          round(
-            stockCoverage
+        fallbackUsed:
+          Boolean(
+            snapshot.fallbackUsed
           ),
 
-        tradingValueCoverage:
-          round(
-            tradingValueCoverage
+        productionReady,
+
+
+        cycleConfig: {
+
+          stages: [
+
+            {
+              code:
+                "EARLY",
+
+              label:
+                "🌱 초기 포착",
+
+              progress:
+                25
+            },
+
+            {
+              code:
+                "LEADERSHIP_ENTRY",
+
+              label:
+                "🚀 주도 진입",
+
+              progress:
+                42
+            },
+
+            {
+              code:
+                "EXPANSION",
+
+              label:
+                "🔥 주도 확산",
+
+              progress:
+                58
+            },
+
+            {
+              code:
+                "PEAK",
+
+              label:
+                "👑 주도 정점",
+
+              progress:
+                74
+            },
+
+            {
+              code:
+                "EXHAUSTION",
+
+              label:
+                "⚠️ 소진 경고",
+
+              progress:
+                88
+            },
+
+            {
+              code:
+                "EXIT",
+
+              label:
+                "🔻 주도 이탈",
+
+              progress:
+                100
+            }
+          ]
+        },
+
+
+        cycleCounts,
+
+
+        coverage: {
+
+          stockCoverage:
+            round(
+              stockCoverage
+            ),
+
+          tradingValueCoverage:
+            round(
+              tradingValueCoverage
+            ),
+
+          minimumStockCoverage:
+            MIN_STOCK_COVERAGE,
+
+          minimumTradingValueCoverage:
+            MIN_TRADING_VALUE_COVERAGE
+        },
+
+
+        classification: {
+
+          ...classification,
+
+          classifiedTradingValue,
+
+          unclassifiedTradingValue:
+            unknownTradingValue
+        },
+
+
+        market: {
+
+          stocks:
+            stocks.length,
+
+          classifiedStocks:
+            knownStocks.length,
+
+          unclassifiedStocks:
+            unknownStocks.length,
+
+          tradingValue:
+            marketTradingValue,
+
+          classifiedTradingValue,
+
+          sectors:
+            sectors.length
+        },
+
+
+        currentLeaders:
+          currentLeaders.map(
+            publicSector
           ),
 
-        minimumStockCoverage:
-          MIN_STOCK_COVERAGE,
 
-        minimumTradingValueCoverage:
-          MIN_TRADING_VALUE_COVERAGE
-      },
-
-
-      classification: {
-
-        ...classification,
-
-        classifiedTradingValue,
-
-        unclassifiedTradingValue:
-          unknownTradingValue
-      },
+        nextLeaderRadar:
+          nextLeaderRadar.map(
+            publicSector
+          ),
 
 
-      market: {
+        exhaustionRadar:
+          exhaustionRadar.map(
+            publicSector
+          ),
 
-        stocks:
-          stocks.length,
-
-        classifiedStocks:
-          knownStocks.length,
-
-        unclassifiedStocks:
-          unknownStocks.length,
-
-        tradingValue:
-          marketTradingValue,
-
-        classifiedTradingValue,
 
         sectors:
-          sectors.length
-      },
+          sectors.map(
+            publicSector
+          ),
 
 
-      /* ===================================================
-         CURRENT LEADERS
-      =================================================== */
+        unclassified: {
 
-      currentLeaders:
-        currentLeaders.map(
-          sector => ({
+          count:
+            unknownStocks.length,
 
-            id:
-              sector.id,
+          tradingValue:
+            unknownTradingValue,
 
-            name:
-              sector.name,
+          sample:
+            unknownStocks
+              .slice(
+                0,
+                30
+              )
+              .map(
+                stock => ({
 
-            stage:
-              sector.stage,
+                  code:
+                    stock.code,
 
-            han:
-              sector.scores.han,
+                  name:
+                    stock.name,
 
-            early:
-              sector.scores.early,
+                  market:
+                    stock.market,
 
-            exhaustion:
-              sector.scores.exhaustion,
+                  tradingValue:
+                    stock.tradingValue
+                })
+              )
+        },
 
-            stockCount:
-              sector.stockCount,
 
-            advanceRatio:
-              sector.advanceRatio,
+        performance: {
 
-            averageChangeRate:
-              sector.averageChangeRate,
+          elapsedMs:
+            Date.now() -
+            startedAt,
 
-            tradingShare:
-              sector.tradingShare,
+          source:
+            "MARKET_SNAPSHOT",
 
-            leaders:
-              sector.leaders
-          })
-        ),
+          sectorMap:
+            "MASTER_PLUS_SAFE_NAME_INFERENCE",
 
-
-      /* ===================================================
-         NEXT LEADER RADAR
-      =================================================== */
-
-      nextLeaderRadar:
-        nextLeaderRadar.map(
-          sector => ({
-
-            id:
-              sector.id,
-
-            name:
-              sector.name,
-
-            stage:
-              sector.stage,
-
-            han:
-              sector.scores.han,
-
-            early:
-              sector.scores.early,
-
-            exhaustion:
-              sector.scores.exhaustion,
-
-            stockCount:
-              sector.stockCount,
-
-            advanceRatio:
-              sector.advanceRatio,
-
-            averageChangeRate:
-              sector.averageChangeRate,
-
-            tradingShare:
-              sector.tradingShare,
-
-            leaders:
-              sector.leaders
-          })
-        ),
-
-
-      /* ===================================================
-         EXHAUSTION SECTORS
-      =================================================== */
-
-      exhaustionSectors:
-        exhaustionSectors.map(
-          sector => ({
-
-            id:
-              sector.id,
-
-            name:
-              sector.name,
-
-            stage:
-              sector.stage,
-
-            exhaustion:
-              sector.scores.exhaustion,
-
-            han:
-              sector.scores.han,
-
-            early:
-              sector.scores.early,
-
-            breadth:
-              sector.scores.breadth,
-
-            momentum:
-              sector.scores.momentum,
-
-            liquidity:
-              sector.scores.liquidity,
-
-            breadthWeakness:
-              sector.scores.breadthWeakness,
-
-            momentumWeakness:
-              sector.scores.momentumWeakness,
-
-            distribution:
-              sector.scores.distribution,
-
-            stockCount:
-              sector.stockCount,
-
-            rising:
-              sector.rising,
-
-            falling:
-              sector.falling,
-
-            advanceRatio:
-              sector.advanceRatio,
-
-            averageChangeRate:
-              sector.averageChangeRate,
-
-            tradingShare:
-              sector.tradingShare,
-
-            tradingValue:
-              sector.tradingValue,
-
-            leaders:
-              sector.leaders
-          })
-        ),
-
-
-      /* ===================================================
-         ALL SECTORS
-      =================================================== */
-
-      sectors,
-
-
-      /* ===================================================
-         UNCLASSIFIED
-      =================================================== */
-
-      unclassified: {
-
-        count:
-          unknownStocks.length,
-
-        tradingValue:
-          unknownTradingValue,
-
-        sample:
-          unknownStocks
-            .slice(
-              0,
-              30
-            )
-            .map(
-              stock => ({
-
-                code:
-                  stock.code,
-
-                name:
-                  stock.name,
-
-                market:
-                  stock.market,
-
-                tradingValue:
-                  stock.tradingValue
-              })
-            )
-      },
-
-
-      /* ===================================================
-         PERFORMANCE
-      =================================================== */
-
-      performance: {
-
-        elapsedMs:
-          Date.now() -
-          startedAt,
-
-        source:
-          "MARKET_SNAPSHOT",
-
-        sectorMap:
-          "MASTER_PLUS_SAFE_NAME_INFERENCE",
-
-        ranking:
-          "HAN_EARLY_EXHAUSTION_V1"
-      }
-    });
+          ranking:
+            "HAN_EARLY_EXHAUSTION_7_STAGE_CYCLE"
+        }
+      });
 
 
   } catch (error) {
 
     console.error(
-      "SECTOR SCAN V3 ERROR",
+      "SECTOR SCAN V4 ERROR",
       error
     );
 
 
-    return res.status(500).json({
+    return res
+      .status(500)
+      .json({
 
-      ok: false,
+        ok: false,
 
-      version:
-        "SECTOR_SCAN_V3_HAN_EARLY_EXHAUSTION",
+        version:
+          "SECTOR_SCAN_V4_CYCLE",
 
-      elapsedMs:
-        Date.now() -
-        startedAt,
+        elapsedMs:
+          Date.now() -
+          startedAt,
 
-      error:
-        String(
-          error?.message ||
-          error
-        )
-    });
+        error:
+          String(
+            error?.message ||
+            error
+          )
+      });
   }
 };
