@@ -1,334 +1,161 @@
 /* =========================================================
-   LEADER CYCLE - SECTOR MAP V1
+   LEADER CYCLE - SECTOR MAP V2
 
-   역할
+   목적
    ---------------------------------------------------------
-   종목코드 → 투자자 관점 Primary Sector 변환
+   종목 → 투자자 관점 Primary Sector 분류
 
    원칙
-   1. 테마 분류 금지
-   2. 종목당 Primary Sector 1개
-   3. 시장 데이터와 산업분류 데이터 분리
-   4. 미분류 종목은 UNKNOWN 처리
-   5. sector-scan.js에서 공통 사용
-
-   IMPORTANT
-   ---------------------------------------------------------
-   STOCK_SECTOR_MAP에는 검증된 산업분류 데이터만 넣는다.
-   추측으로 종목을 분류하지 않는다.
+   1. 테마 사용 금지
+   2. Primary Sector 1개
+   3. 검증된 종목은 MANUAL MAP 최우선
+   4. 확실한 종목명 패턴만 자동 분류
+   5. 애매하면 UNKNOWN
+   6. 향후 공식 산업분류 데이터 연결 가능
 ========================================================= */
 
 
 /* =========================================================
    STANDARD SECTORS
-
-   투자자 관점의 고정 산업 분류
 ========================================================= */
 
 const SECTORS = Object.freeze({
 
-  SEMICONDUCTOR: {
-    id: "SEMICONDUCTOR",
-    name: "반도체"
-  },
+  SEMICONDUCTOR: { id: "SEMICONDUCTOR", name: "반도체" },
+  DISPLAY: { id: "DISPLAY", name: "디스플레이" },
 
-  DISPLAY: {
-    id: "DISPLAY",
-    name: "디스플레이"
-  },
+  IT_HARDWARE: { id: "IT_HARDWARE", name: "IT하드웨어" },
+  SOFTWARE: { id: "SOFTWARE", name: "소프트웨어" },
+  INTERNET: { id: "INTERNET", name: "인터넷" },
+  TELECOM: { id: "TELECOM", name: "통신" },
 
-  IT_HARDWARE: {
-    id: "IT_HARDWARE",
-    name: "IT하드웨어"
-  },
+  AUTO: { id: "AUTO", name: "자동차" },
+  AUTO_PARTS: { id: "AUTO_PARTS", name: "자동차부품" },
 
-  SOFTWARE: {
-    id: "SOFTWARE",
-    name: "소프트웨어"
-  },
+  BATTERY: { id: "BATTERY", name: "2차전지" },
 
-  INTERNET: {
-    id: "INTERNET",
-    name: "인터넷"
-  },
+  CHEMICAL: { id: "CHEMICAL", name: "화학" },
+  STEEL: { id: "STEEL", name: "철강" },
+  NONFERROUS: { id: "NONFERROUS", name: "비철금속" },
 
-  TELECOM: {
-    id: "TELECOM",
-    name: "통신"
-  },
-
-  AUTO: {
-    id: "AUTO",
-    name: "자동차"
-  },
-
-  AUTO_PARTS: {
-    id: "AUTO_PARTS",
-    name: "자동차부품"
-  },
-
-  BATTERY: {
-    id: "BATTERY",
-    name: "2차전지"
-  },
-
-  CHEMICAL: {
-    id: "CHEMICAL",
-    name: "화학"
-  },
-
-  STEEL: {
-    id: "STEEL",
-    name: "철강"
-  },
-
-  NONFERROUS: {
-    id: "NONFERROUS",
-    name: "비철금속"
-  },
-
-  MACHINERY: {
-    id: "MACHINERY",
-    name: "기계"
-  },
+  MACHINERY: { id: "MACHINERY", name: "기계" },
 
   ELECTRICAL_EQUIPMENT: {
     id: "ELECTRICAL_EQUIPMENT",
     name: "전력기기"
   },
 
-  ROBOTICS: {
-    id: "ROBOTICS",
-    name: "로봇·자동화"
-  },
+  ROBOTICS: { id: "ROBOTICS", name: "로봇·자동화" },
 
-  SHIPBUILDING: {
-    id: "SHIPBUILDING",
-    name: "조선"
-  },
+  SHIPBUILDING: { id: "SHIPBUILDING", name: "조선" },
+  DEFENSE: { id: "DEFENSE", name: "방산" },
+  AEROSPACE: { id: "AEROSPACE", name: "항공·우주" },
 
-  DEFENSE: {
-    id: "DEFENSE",
-    name: "방산"
-  },
-
-  AEROSPACE: {
-    id: "AEROSPACE",
-    name: "항공·우주"
-  },
-
-  CONSTRUCTION: {
-    id: "CONSTRUCTION",
-    name: "건설"
-  },
+  CONSTRUCTION: { id: "CONSTRUCTION", name: "건설" },
 
   BUILDING_MATERIALS: {
     id: "BUILDING_MATERIALS",
     name: "건자재"
   },
 
-  ENERGY: {
-    id: "ENERGY",
-    name: "에너지"
-  },
+  ENERGY: { id: "ENERGY", name: "에너지" },
+  UTILITIES: { id: "UTILITIES", name: "유틸리티" },
 
-  UTILITIES: {
-    id: "UTILITIES",
-    name: "유틸리티"
-  },
+  BIO: { id: "BIO", name: "바이오" },
+  PHARMA: { id: "PHARMA", name: "제약" },
+  HEALTHCARE: { id: "HEALTHCARE", name: "헬스케어" },
 
-  BIO: {
-    id: "BIO",
-    name: "바이오"
-  },
+  BANK: { id: "BANK", name: "은행" },
+  SECURITIES: { id: "SECURITIES", name: "증권" },
+  INSURANCE: { id: "INSURANCE", name: "보험" },
+  FINANCE: { id: "FINANCE", name: "기타금융" },
 
-  PHARMA: {
-    id: "PHARMA",
-    name: "제약"
-  },
+  RETAIL: { id: "RETAIL", name: "유통" },
+  FOOD: { id: "FOOD", name: "음식료" },
+  CONSUMER: { id: "CONSUMER", name: "소비재" },
+  COSMETICS: { id: "COSMETICS", name: "화장품" },
+  FASHION: { id: "FASHION", name: "의류" },
 
-  HEALTHCARE: {
-    id: "HEALTHCARE",
-    name: "헬스케어"
-  },
+  MEDIA: { id: "MEDIA", name: "미디어·콘텐츠" },
+  LEISURE: { id: "LEISURE", name: "호텔·레저" },
+  TRANSPORT: { id: "TRANSPORT", name: "운송" },
 
-  BANK: {
-    id: "BANK",
-    name: "은행"
-  },
-
-  SECURITIES: {
-    id: "SECURITIES",
-    name: "증권"
-  },
-
-  INSURANCE: {
-    id: "INSURANCE",
-    name: "보험"
-  },
-
-  FINANCE: {
-    id: "FINANCE",
-    name: "기타금융"
-  },
-
-  RETAIL: {
-    id: "RETAIL",
-    name: "유통"
-  },
-
-  FOOD: {
-    id: "FOOD",
-    name: "음식료"
-  },
-
-  CONSUMER: {
-    id: "CONSUMER",
-    name: "소비재"
-  },
-
-  COSMETICS: {
-    id: "COSMETICS",
-    name: "화장품"
-  },
-
-  FASHION: {
-    id: "FASHION",
-    name: "의류"
-  },
-
-  MEDIA: {
-    id: "MEDIA",
-    name: "미디어·콘텐츠"
-  },
-
-  LEISURE: {
-    id: "LEISURE",
-    name: "호텔·레저"
-  },
-
-  TRANSPORT: {
-    id: "TRANSPORT",
-    name: "운송"
-  },
-
-  HOLDING: {
-    id: "HOLDING",
-    name: "지주"
-  },
-
-  OTHER: {
-    id: "OTHER",
-    name: "기타"
-  }
+  HOLDING: { id: "HOLDING", name: "지주" },
+  OTHER: { id: "OTHER", name: "기타" }
 
 });
 
 
 /* =========================================================
-   VERIFIED STOCK → SECTOR MAP
+   VERIFIED MANUAL MAP
 
-   여기에 검증 완료된 종목만 저장한다.
-
-   code: sector ID
-
-   예:
-   "005930": "SEMICONDUCTOR"
-
-   아래 데이터는 시스템 연결 테스트용 핵심 종목이다.
-   전체 universe는 별도 검증 데이터로 확장한다.
+   투자자 관점에서 검증한 종목.
+   자동분류보다 항상 우선한다.
 ========================================================= */
 
 const STOCK_SECTOR_MAP = Object.freeze({
 
-  /* -------------------------
-     반도체
-  ------------------------- */
+  /* 반도체 */
 
-  "005930": "SEMICONDUCTOR", // 삼성전자
-  "000660": "SEMICONDUCTOR", // SK하이닉스
-  "042700": "SEMICONDUCTOR", // 한미반도체
-  "403870": "SEMICONDUCTOR", // HPSP
+  "005930": "SEMICONDUCTOR",
+  "000660": "SEMICONDUCTOR",
+  "042700": "SEMICONDUCTOR",
+  "403870": "SEMICONDUCTOR",
 
+  /* 자동차 */
 
-  /* -------------------------
-     자동차
-  ------------------------- */
+  "005380": "AUTO",
+  "000270": "AUTO",
 
-  "005380": "AUTO", // 현대차
-  "000270": "AUTO", // 기아
+  /* 2차전지 */
 
+  "373220": "BATTERY",
+  "003670": "BATTERY",
 
-  /* -------------------------
-     2차전지
-  ------------------------- */
+  /* 전력기기 */
 
-  "373220": "BATTERY", // LG에너지솔루션
-  "003670": "BATTERY", // 포스코퓨처엠
+  "267260": "ELECTRICAL_EQUIPMENT",
+  "298040": "ELECTRICAL_EQUIPMENT",
+  "010120": "ELECTRICAL_EQUIPMENT",
 
+  /* 조선 */
 
-  /* -------------------------
-     전력기기
-  ------------------------- */
+  "009540": "SHIPBUILDING",
+  "042660": "SHIPBUILDING",
+  "010140": "SHIPBUILDING",
 
-  "267260": "ELECTRICAL_EQUIPMENT", // HD현대일렉트릭
-  "298040": "ELECTRICAL_EQUIPMENT", // 효성중공업
-  "010120": "ELECTRICAL_EQUIPMENT", // LS ELECTRIC
+  /* 방산 */
 
+  "012450": "DEFENSE",
+  "079550": "DEFENSE",
+  "064350": "DEFENSE",
 
-  /* -------------------------
-     조선
-  ------------------------- */
+  /* 항공우주 */
 
-  "009540": "SHIPBUILDING", // HD한국조선해양
-  "042660": "SHIPBUILDING", // 한화오션
-  "010140": "SHIPBUILDING", // 삼성중공업
+  "047810": "AEROSPACE",
+  "272210": "AEROSPACE",
 
+  /* 로봇 */
 
-  /* -------------------------
-     방산
-  ------------------------- */
+  "454910": "ROBOTICS",
+  "277810": "ROBOTICS",
 
-  "012450": "DEFENSE", // 한화에어로스페이스
-  "079550": "DEFENSE", // LIG넥스원
-  "064350": "DEFENSE", // 현대로템
+  /* 바이오 */
 
-
-  /* -------------------------
-     항공·우주
-  ------------------------- */
-
-  "047810": "AEROSPACE", // 한국항공우주
-  "272210": "AEROSPACE", // 한화시스템
-
-
-  /* -------------------------
-     로봇·자동화
-  ------------------------- */
-
-  "454910": "ROBOTICS", // 두산로보틱스
-  "277810": "ROBOTICS", // 레인보우로보틱스
-
-
-  /* -------------------------
-     바이오
-  ------------------------- */
-
-  "207940": "BIO", // 삼성바이오로직스
-  "068270": "BIO" // 셀트리온
+  "207940": "BIO",
+  "068270": "BIO"
 
 });
 
 
 /* =========================================================
-   CODE NORMALIZER
+   NORMALIZE CODE
 ========================================================= */
 
 function normalizeCode(value) {
 
   const raw =
-    String(value || "")
-      .trim();
+    String(value || "").trim();
 
   if (/^\d{6}$/.test(raw)) {
     return raw;
@@ -344,19 +171,248 @@ function normalizeCode(value) {
 
 
 /* =========================================================
-   GET SECTOR ID
+   NAME NORMALIZER
 ========================================================= */
 
-function getSectorId(code) {
+function normalizeName(value) {
 
-  const normalized =
-    normalizeCode(code);
+  return String(value || "")
+    .trim()
+    .toUpperCase();
+}
 
-  return (
+
+/* =========================================================
+   SAFE NAME-BASED CLASSIFICATION
+
+   종목명 자체가 업종을 강하게 의미하는 경우만 사용.
+
+   애매한 키워드는 절대 넣지 않는다.
+========================================================= */
+
+function inferSectorFromName(name) {
+
+  const n =
+    normalizeName(name);
+
+
+  if (!n) {
+    return null;
+  }
+
+
+  /* -------------------------------------------------------
+     증권
+  ------------------------------------------------------- */
+
+  if (
+    /증권$/.test(n) ||
+    /투자증권/.test(n) ||
+    /SECURITIES/.test(n)
+  ) {
+    return "SECURITIES";
+  }
+
+
+  /* -------------------------------------------------------
+     보험
+  ------------------------------------------------------- */
+
+  if (
+    /손해보험/.test(n) ||
+    /생명$/.test(n) ||
+    /화재$/.test(n) ||
+    /INSURANCE/.test(n)
+  ) {
+    return "INSURANCE";
+  }
+
+
+  /* -------------------------------------------------------
+     은행 / 금융지주
+
+     금융지주는 FINANCE로 분리
+  ------------------------------------------------------- */
+
+  if (
+    /금융지주/.test(n) ||
+    /FINANCIAL GROUP/.test(n)
+  ) {
+    return "FINANCE";
+  }
+
+
+  if (
+    /은행$/.test(n) ||
+    /BANK$/.test(n)
+  ) {
+    return "BANK";
+  }
+
+
+  /* -------------------------------------------------------
+     제약
+  ------------------------------------------------------- */
+
+  if (
+    /제약/.test(n) ||
+    /PHARM/.test(n)
+  ) {
+    return "PHARMA";
+  }
+
+
+  /* -------------------------------------------------------
+     바이오
+
+     제약보다 뒤에서 검사
+  ------------------------------------------------------- */
+
+  if (
+    /바이오/.test(n) ||
+    /BIO/.test(n)
+  ) {
+    return "BIO";
+  }
+
+
+  /* -------------------------------------------------------
+     건설
+  ------------------------------------------------------- */
+
+  if (
+    /건설/.test(n) ||
+    /건설산업/.test(n)
+  ) {
+    return "CONSTRUCTION";
+  }
+
+
+  /* -------------------------------------------------------
+     조선
+
+     이름 자체에 조선이 명시된 경우
+  ------------------------------------------------------- */
+
+  if (
+    /조선/.test(n)
+  ) {
+    return "SHIPBUILDING";
+  }
+
+
+  /* -------------------------------------------------------
+     로봇
+  ------------------------------------------------------- */
+
+  if (
+    /로보틱스/.test(n) ||
+    /로봇/.test(n) ||
+    /ROBOTICS/.test(n)
+  ) {
+    return "ROBOTICS";
+  }
+
+
+  /* -------------------------------------------------------
+     화장품
+  ------------------------------------------------------- */
+
+  if (
+    /코스메틱/.test(n) ||
+    /COSMETIC/.test(n)
+  ) {
+    return "COSMETICS";
+  }
+
+
+  return null;
+}
+
+
+/* =========================================================
+   RESOLVE SECTOR ID
+
+   우선순위
+   ---------------------------------------------------------
+   1. Manual verified map
+   2. Safe name inference
+   3. UNKNOWN
+========================================================= */
+
+function resolveSectorId(stockOrCode, maybeName) {
+
+  let code;
+  let name;
+
+
+  if (
+    stockOrCode &&
+    typeof stockOrCode === "object"
+  ) {
+
+    code =
+      normalizeCode(
+        stockOrCode.code
+      );
+
+    name =
+      stockOrCode.name;
+
+  } else {
+
+    code =
+      normalizeCode(
+        stockOrCode
+      );
+
+    name =
+      maybeName;
+  }
+
+
+  /* VERIFIED MAP */
+
+  const verified =
     STOCK_SECTOR_MAP[
-      normalized
-    ] ||
-    null
+      code
+    ];
+
+  if (verified) {
+    return verified;
+  }
+
+
+  /* SAFE AUTO CLASSIFICATION */
+
+  const inferred =
+    inferSectorFromName(
+      name
+    );
+
+  if (inferred) {
+    return inferred;
+  }
+
+
+  return null;
+}
+
+
+/* =========================================================
+   GET SECTOR ID
+
+   기존 코드 호환 유지
+========================================================= */
+
+function getSectorId(
+  code,
+  name
+) {
+
+  return resolveSectorId(
+    code,
+    name
   );
 }
 
@@ -365,48 +421,70 @@ function getSectorId(code) {
    GET SECTOR
 ========================================================= */
 
-function getSector(code) {
-
-  const normalized =
-    normalizeCode(code);
+function getSector(
+  code,
+  name
+) {
 
   const sectorId =
-    STOCK_SECTOR_MAP[
-      normalized
-    ];
+    resolveSectorId(
+      code,
+      name
+    );
+
 
   if (!sectorId) {
 
     return {
       id: "UNKNOWN",
       name: "미분류",
-      classified: false
+      classified: false,
+      source: "UNKNOWN"
     };
   }
+
 
   const sector =
     SECTORS[
       sectorId
     ];
 
+
   if (!sector) {
 
     return {
       id: "UNKNOWN",
       name: "미분류",
-      classified: false
+      classified: false,
+      source: "UNKNOWN"
     };
   }
 
+
+  const normalized =
+    normalizeCode(code);
+
+
+  const source =
+    STOCK_SECTOR_MAP[
+      normalized
+    ]
+      ? "VERIFIED"
+      : "NAME_INFERENCE";
+
+
   return {
     ...sector,
-    classified: true
+
+    classified: true,
+
+    source
   };
 }
 
 
 /* =========================================================
-   GET STOCK CLASSIFICATION
+   CLASSIFY STOCK
 ========================================================= */
 
 function classifyStock(stock) {
@@ -416,10 +494,16 @@ function classifyStock(stock) {
       stock?.code
     );
 
+
   const sector =
-    getSector(code);
+    getSector(
+      code,
+      stock?.name
+    );
+
 
   return {
+
     ...stock,
 
     code,
@@ -431,13 +515,16 @@ function classifyStock(stock) {
       sector.name,
 
     sectorClassified:
-      sector.classified
+      sector.classified,
+
+    sectorSource:
+      sector.source
   };
 }
 
 
 /* =========================================================
-   CLASSIFY STOCK ARRAY
+   CLASSIFY ARRAY
 ========================================================= */
 
 function classifyStocks(stocks) {
@@ -461,7 +548,9 @@ function groupBySector(stocks) {
   const classified =
     classifyStocks(stocks);
 
+
   const groups = {};
+
 
   for (
     const stock of classified
@@ -471,9 +560,11 @@ function groupBySector(stocks) {
       stock.sectorId ||
       "UNKNOWN";
 
+
     if (!groups[sectorId]) {
 
       groups[sectorId] = {
+
         id:
           sectorId,
 
@@ -485,6 +576,7 @@ function groupBySector(stocks) {
       };
     }
 
+
     groups[
       sectorId
     ].stocks.push(
@@ -492,18 +584,13 @@ function groupBySector(stocks) {
     );
   }
 
+
   return groups;
 }
 
 
 /* =========================================================
    CLASSIFICATION STATS
-
-   전체 시장 중 얼마나 분류됐는지 확인하는 용도.
-
-   중요:
-   coverage가 낮으면 Sector Scanner 결과를
-   최종 결과로 사용하면 안 된다.
 ========================================================= */
 
 function getClassificationStats(
@@ -516,31 +603,61 @@ function getClassificationStats(
       total: 0,
       classified: 0,
       unclassified: 0,
-      coverage: 0
+      coverage: 0,
+      verified: 0,
+      inferred: 0
     };
   }
 
+
   let classified = 0;
+  let verified = 0;
+  let inferred = 0;
+
 
   for (
     const stock of stocks
   ) {
 
+    const result =
+      classifyStock(
+        stock
+      );
+
+
     if (
-      getSectorId(
-        stock?.code
-      )
+      result.sectorClassified
     ) {
+
       classified++;
+
+
+      if (
+        result.sectorSource ===
+        "VERIFIED"
+      ) {
+
+        verified++;
+
+      } else if (
+        result.sectorSource ===
+        "NAME_INFERENCE"
+      ) {
+
+        inferred++;
+      }
     }
   }
+
 
   const total =
     stocks.length;
 
+
   const unclassified =
     total -
     classified;
+
 
   const coverage =
     total > 0
@@ -550,7 +667,9 @@ function getClassificationStats(
         ) * 100
       : 0;
 
+
   return {
+
     total,
 
     classified,
@@ -560,15 +679,17 @@ function getClassificationStats(
     coverage:
       Number(
         coverage.toFixed(2)
-      )
+      ),
+
+    verified,
+
+    inferred
   };
 }
 
 
 /* =========================================================
-   LIST UNCLASSIFIED
-
-   신규상장 / 누락종목 확인용
+   UNCLASSIFIED STOCKS
 ========================================================= */
 
 function getUnclassifiedStocks(
@@ -579,10 +700,11 @@ function getUnclassifiedStocks(
     return [];
   }
 
+
   return stocks.filter(
     stock =>
-      !getSectorId(
-        stock?.code
+      !resolveSectorId(
+        stock
       )
   );
 }
@@ -600,6 +722,10 @@ module.exports = {
 
   normalizeCode,
 
+  inferSectorFromName,
+
+  resolveSectorId,
+
   getSectorId,
 
   getSector,
@@ -613,5 +739,4 @@ module.exports = {
   getClassificationStats,
 
   getUnclassifiedStocks
-
 };
